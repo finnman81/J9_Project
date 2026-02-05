@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Database (optional: remove this line if you want to commit seed data)
+database/*.db
+
+# Excel/data files (optional: uncomment to avoid committing large files)
+# *.xlsx
+# *.xls
+# normalized_grades.xlsx
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Distribution / build
+*.egg-info/
+dist/
+build/

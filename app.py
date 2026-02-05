@@ -1,0 +1,39 @@
+"""
+Main Streamlit application for Literacy Assessment System
+"""
+import streamlit as st
+import pandas as pd
+from database import init_database, get_db_connection
+
+# Page configuration
+st.set_page_config(
+    page_title="Literacy Assessment System",
+    page_icon="📚",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Initialize database on first run
+if 'db_initialized' not in st.session_state:
+    init_database()
+    st.session_state.db_initialized = True
+
+# Sidebar navigation
+st.sidebar.title("📚 Literacy Assessment")
+st.sidebar.markdown("---")
+
+page = st.sidebar.radio(
+    "Navigation",
+    ["Overview Dashboard", "Student Detail", "Grade Entry"]
+)
+
+# Route to appropriate page
+if page == "Overview Dashboard":
+    from pages.overview_dashboard import show_overview_dashboard
+    show_overview_dashboard()
+elif page == "Student Detail":
+    from pages.student_detail import show_student_detail
+    show_student_detail()
+elif page == "Grade Entry":
+    from pages.grade_entry import show_grade_entry
+    show_grade_entry()
