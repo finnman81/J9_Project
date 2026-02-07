@@ -138,7 +138,7 @@ def show_overview_dashboard():
             WHERE {where_clause}
               AND s.school_year = (
                   SELECT MAX(s2.school_year) FROM students s2
-                  WHERE s2.student_name = s.student_name
+                  WHERE s2.student_id = s.student_id
               )
             ORDER BY s.student_name, s.grade_level
         '''
@@ -176,7 +176,40 @@ def show_overview_dashboard():
     conn.close()
     
     intervention_count = intervention_df['intervention_count'].iloc[0] if not intervention_df.empty else 0
-    intervention_coverage = (intervention_count / at_risk * 100) if at_risk > 0 else 0
+
+    # Coverage should be at-risk students who have an active intervention / at-risk students
+    at_risk_with_intervention_query = '''
+        SELECT COUNT(DISTINCT s.student_id) AS covered_at_risk
+        FROM students s
+        JOIN literacy_scores ls ON ls.student_id = s.student_id AND ls.school_year = s.school_year
+        LEFT JOIN interventions i ON i.student_id = s.student_id AND i.status = 'Active'
+        WHERE ls.score_id = (
+            SELECT score_id FROM literacy_scores ls2
+            WHERE ls2.student_id = s.student_id AND ls2.school_year = s.school_year
+            ORDER BY ls2.calculated_at DESC
+            LIMIT 1
+        )
+          AND ls.risk_level IN ('High', 'Medium')
+    '''
+    at_risk_params = []
+    if selected_year != 'All':
+        at_risk_with_intervention_query += ' AND s.school_year = ?'
+        at_risk_params.append(selected_year)
+
+    at_risk_with_intervention_query += ' AND i.student_id IS NOT NULL'
+    conn = get_db_connection()
+    at_risk_with_intervention_df = pd.read_sql_query(
+        at_risk_with_intervention_query,
+        conn,
+        params=at_risk_params
+    )
+    conn.close()
+    covered_at_risk = (
+        at_risk_with_intervention_df['covered_at_risk'].iloc[0]
+        if not at_risk_with_intervention_df.empty else 0
+    )
+
+    intervention_coverage = (covered_at_risk / at_risk * 100) if at_risk > 0 else 0
     
     # Assessment completion rate
     students_with_scores = len(df[df['overall_literacy_score'].notna()])

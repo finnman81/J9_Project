@@ -261,7 +261,18 @@ def get_latest_literacy_score(student_id: int, school_year: str = None) -> Optio
         query += ' AND school_year = ?'
         params.append(school_year)
     
-    query += ' ORDER BY assessment_period DESC LIMIT 1'
+    query += '''
+        ORDER BY
+            CASE assessment_period
+                WHEN 'Fall' THEN 1
+                WHEN 'Winter' THEN 2
+                WHEN 'Spring' THEN 3
+                WHEN 'EOY' THEN 4
+                ELSE 0
+            END DESC,
+            calculated_at DESC
+        LIMIT 1
+    '''
     cursor = conn.cursor()
     cursor.execute(query, params)
     result = cursor.fetchone()

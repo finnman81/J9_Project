@@ -358,8 +358,56 @@ def show_single_entry_form():
     
     with col2:
         if st.button("Save and Add Another", use_container_width=True):
-            # Similar logic but don't rerun
-            pass
+            if student_option == "Create New Student" and not student_id:
+                if not student_name or not grade_level:
+                    st.error("Please fill in required fields: Student Name and Grade Level")
+                else:
+                    student_id = create_student(
+                        student_name=student_name,
+                        grade_level=grade_level,
+                        class_name=class_name if class_name else None,
+                        teacher_name=teacher_name if teacher_name else None,
+                        school_year=school_year_display
+                    )
+            elif student_option == "Select Existing Student" and not student_id:
+                student_id = create_student(
+                    student_name=student_name,
+                    grade_level=grade_level,
+                    class_name=class_name if class_name else None,
+                    teacher_name=teacher_name if teacher_name else None,
+                    school_year=school_year_display
+                )
+
+            if student_id:
+                add_assessment(
+                    student_id=student_id,
+                    assessment_type=assessment_type,
+                    assessment_period=assessment_period,
+                    school_year=school_year_display,
+                    score_value=str(score_value) if score_value else None,
+                    score_normalized=score_normalized,
+                    assessment_date=assessment_date.strftime("%Y-%m-%d") if assessment_date else None,
+                    notes=notes if notes else None,
+                    concerns=concerns if concerns else None,
+                    entered_by=entered_by
+                )
+
+                if add_intervention_entry and intervention_type:
+                    add_intervention(
+                        student_id=student_id,
+                        intervention_type=intervention_type,
+                        start_date=intervention_start_date.strftime("%Y-%m-%d") if intervention_start_date else None,
+                        end_date=intervention_end_date.strftime("%Y-%m-%d") if intervention_end_date else None,
+                        frequency=intervention_frequency,
+                        duration_minutes=intervention_duration,
+                        status=intervention_status,
+                        notes=intervention_notes
+                    )
+
+                recalculate_literacy_scores(student_id=student_id)
+                st.success("Assessment saved. Enter another one below.")
+            else:
+                st.error("Please select or create a student first")
 
 def show_bulk_entry_form():
     """Bulk entry form"""

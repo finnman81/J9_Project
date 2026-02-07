@@ -5,10 +5,8 @@ Deep dive into individual student progress
 import streamlit as st
 import pandas as pd
 from database import (
-    get_all_students, get_student_assessments, get_student_interventions,
-    get_latest_literacy_score, get_db_connection
+    get_all_students, get_db_connection
 )
-import pandas as pd
 from visualizations import (
     create_student_progress_chart,
     create_reading_level_progression,
@@ -20,29 +18,32 @@ def show_student_detail():
     st.title("👤 Student Detail")
     st.markdown("---")
     
-    # Student selection - get unique student names only
+    # Student selection by unique student_id to avoid name collisions
     students_df = get_all_students()
-    
+
     if students_df.empty:
         st.warning("No students found in database. Please add students via Grade Entry page.")
         return
-    
-    # Get unique student names
-    unique_students = sorted(students_df['student_name'].unique().tolist())
-    
-    selected_student_name = st.selectbox(
-        "Select Student",
-        unique_students
+
+    selector_df = students_df[['student_id', 'student_name', 'grade_level', 'school_year', 'class_name']].copy()
+    selector_df['student_label'] = selector_df.apply(
+        lambda row: f"{row['student_name']} | {row['grade_level']} | {row['school_year']}" +
+        (f" | {row['class_name']}" if pd.notna(row['class_name']) and row['class_name'] else ''),
+        axis=1
     )
-    
-    # Get all records for this student (across all grades and years)
-    student_records = students_df[students_df['student_name'] == selected_student_name]
-    
-    # Show student info (use most recent or first record)
-    if not student_records.empty:
-        selected_row = student_records.iloc[0]
-        student_name = selected_student_name
-        # Note: student_id is per grade/year, so we'll work with student_name for queries
+    selector_df = selector_df.sort_values(['student_name', 'school_year', 'grade_level'])
+
+    selected_student_id = st.selectbox(
+        "Select Student Record",
+        selector_df['student_id'].tolist(),
+        format_func=lambda sid: selector_df.loc[selector_df['student_id'] == sid, 'student_label'].iloc[0]
+    )
+
+    selected_student_row = students_df[students_df['student_id'] == selected_student_id].iloc[0]
+    student_name = selected_student_row['student_name']
+
+    # Get all records for this selected student identity
+    student_records = students_df[students_df['student_id'] == selected_student_id]
     
     # Student Info Card
     st.subheader("Student Information")
@@ -107,10 +108,18 @@ def show_student_detail():
             s.class_name
         FROM literacy_scores ls
         JOIN students s ON ls.student_id = s.student_id
-        WHERE s.student_name = ?
-        ORDER BY s.school_year, s.grade_level, ls.assessment_period
+        WHERE s.student_id = ?
+        ORDER BY
+            CASE ls.assessment_period
+                WHEN 'Fall' THEN 1
+                WHEN 'Winter' THEN 2
+                WHEN 'Spring' THEN 3
+                WHEN 'EOY' THEN 4
+                ELSE 0
+            END,
+            ls.calculated_at
     '''
-    all_scores_df = pd.read_sql_query(all_scores_query, conn, params=[student_name])
+    all_scores_df = pd.read_sql_query(all_scores_query, conn, params=[selected_student_id])
     conn.close()
     
     # Clean DataFrame: drop duplicates and reset index
@@ -120,10 +129,15 @@ def show_student_detail():
         # Filter by selected grades
         all_scores_df = all_scores_df[all_scores_df['grade_level'].isin(selected_grades)].reset_index(drop=True)
     
-    # Get latest score (most recent across all grades)
+    # Get latest score (most recent period by chronological order)
     latest_score = None
     if not all_scores_df.empty:
-        latest_score = all_scores_df.iloc[-1].to_dict()
+        period_key = {'Fall': 1, 'Winter': 2, 'Spring': 3, 'EOY': 4}
+        latest_df = all_scores_df.copy()
+        latest_df['year_key'] = latest_df['school_year'].apply(lambda val: int(str(val).split('-')[0]) if str(val).split('-')[0].isdigit() else 0)
+        latest_df['period_key'] = latest_df['assessment_period'].map(period_key).fillna(0)
+        latest_df = latest_df.sort_values(['year_key', 'period_key', 'calculated_at'])
+        latest_score = latest_df.iloc[-1].to_dict()
 
     # Trend override: if trend is Unknown, compute using previous period in same grade/year
     if latest_score and latest_score.get('trend') == 'Unknown' and not all_scores_df.empty:
@@ -277,10 +291,10 @@ def show_student_detail():
             SELECT i.*, s.student_name, s.grade_level, s.school_year
             FROM interventions i
             JOIN students s ON i.student_id = s.student_id
-            WHERE s.student_name = ?
+            WHERE s.student_id = ?
             ORDER BY i.start_date DESC
         '''
-        interventions_df = pd.read_sql_query(interventions_query, conn, params=[student_name])
+        interventions_df = pd.read_sql_query(interventions_query, conn, params=[selected_student_id])
         conn.close()
         
         # Clean DataFrame: drop duplicates and reset index
@@ -320,10 +334,17 @@ def show_student_detail():
             s.class_name
         FROM assessments a
         JOIN students s ON a.student_id = s.student_id
-        WHERE s.student_name = ?
-        ORDER BY s.school_year, s.grade_level, a.assessment_date DESC, a.assessment_period
+        WHERE s.student_id = ?
+        ORDER BY s.school_year, s.grade_level, a.assessment_date DESC,
+            CASE a.assessment_period
+                WHEN 'Fall' THEN 1
+                WHEN 'Winter' THEN 2
+                WHEN 'Spring' THEN 3
+                WHEN 'EOY' THEN 4
+                ELSE 0
+            END
     '''
-    assessments_df = pd.read_sql_query(all_assessments_query, conn, params=[student_name])
+    assessments_df = pd.read_sql_query(all_assessments_query, conn, params=[selected_student_id])
     conn.close()
     
     # Clean DataFrame: drop duplicates and reset index
