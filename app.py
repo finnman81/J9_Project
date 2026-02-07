@@ -24,7 +24,7 @@ st.sidebar.markdown("---")
 
 page = st.sidebar.radio(
     "Navigation",
-    ["Overview Dashboard", "Student Detail", "Grade Entry", "Data Import"]
+    ["Overview Dashboard", "Student Detail", "Grade Entry"]
 )
 
 # Route to appropriate page
@@ -37,6 +37,3 @@ elif page == "Student Detail":
 elif page == "Grade Entry":
     from pages.grade_entry import show_grade_entry
     show_grade_entry()
-elif page == "Data Import":
-    from pages.data_import import show_data_import
-    show_data_import()
