@@ -32,9 +32,9 @@ def create_risk_distribution_chart(df: pd.DataFrame, grade_filter: str = None) -
 
 def create_grade_comparison_chart(df: pd.DataFrame) -> go.Figure:
     """Create bar chart comparing average literacy scores by grade"""
-    grade_avg = df.groupby('grade_level')['overall_literacy_score'].agg(['mean', 'std']).reset_index()
-    # Order grades from Kindergarten -> Fourth
-    grade_order = ['Kindergarten', 'First', 'Second', 'Third', 'Fourth']
+    grade_avg = df.groupby('grade_level')['overall_literacy_score'].mean().reset_index()
+    grade_avg.columns = ['grade_level', 'mean']
+    grade_order = ['Kindergarten', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth']
     grade_avg['grade_order'] = grade_avg['grade_level'].apply(
         lambda g: grade_order.index(g) if g in grade_order else len(grade_order)
     )
@@ -45,17 +45,18 @@ def create_grade_comparison_chart(df: pd.DataFrame) -> go.Figure:
     fig.add_trace(go.Bar(
         x=grade_avg['grade_level'],
         y=grade_avg['mean'],
-        error_y=dict(type='data', array=grade_avg['std']),
-        marker_color='#007bff',
+        marker_color='#5b9bd5',
+        text=[f"{v:.0f}" for v in grade_avg['mean']],
+        textposition='outside',
         name='Average Score'
     ))
     
     fig.update_layout(
-        title='Average Literacy Score by Grade Level',
-        xaxis_title='Grade Level',
-        yaxis_title='Average Literacy Score',
+        title='Average Score by Grade',
+        xaxis_title='',
+        yaxis_title='Average Score',
         height=400,
-        yaxis=dict(range=[0, 100])
+        yaxis=dict(range=[0, 105])
     )
     
     return fig

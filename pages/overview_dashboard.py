@@ -1,16 +1,12 @@
 """
 Overview Dashboard Page
-Shows KPIs, graphs, and sortable student table
+Clean, scannable layout for teachers and administrators.
 """
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
 from database import get_all_students, get_db_connection
-from visualizations import (
-    create_risk_distribution_chart,
-    create_grade_comparison_chart,
-    create_score_trend_chart
-)
 from calculations import determine_risk_level
 from benchmarks import (
     get_benchmark_status, get_support_level, benchmark_color,
@@ -18,59 +14,68 @@ from benchmarks import (
 )
 from erb_scoring import (
     ERB_SUBTESTS, ERB_SUBTEST_LABELS, summarize_erb_scores,
-    get_latest_erb_tier, blend_tiers, stanine_color, stanine_emoji,
+    get_latest_erb_tier, blend_tiers,
 )
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_SUPPORT_LABEL = {'High': 'Needs Support', 'Medium': 'Monitor', 'Low': 'On Track'}
+_SUPPORT_COLOR = {
+    'Needs Support': 'background-color: #f5c6cb; color: #721c24',
+    'Monitor':       'background-color: #ffeeba; color: #856404',
+    'On Track':      'background-color: #c3e6cb; color: #155724',
+}
+
+def _support_label(risk: str) -> str:
+    return _SUPPORT_LABEL.get(risk, risk or 'N/A')
+
+
+def _color_support(val):
+    return _SUPPORT_COLOR.get(val, '')
+
+
+def _color_tier(val):
+    if 'Core' in str(val):
+        return 'background-color: #c3e6cb; color: #155724'
+    elif 'Strategic' in str(val):
+        return 'background-color: #ffeeba; color: #856404'
+    elif 'Intensive' in str(val):
+        return 'background-color: #f5c6cb; color: #721c24'
+    return ''
+
+# ---------------------------------------------------------------------------
+# Main dashboard
+# ---------------------------------------------------------------------------
+
 def show_overview_dashboard():
-    st.title("📊 Overview Dashboard")
-    st.markdown("---")
-    
-    # Get database connection
-    conn = get_db_connection()
-    
-    # Get unique values for filters
+    st.title("Literacy Dashboard")
+
+    # ── Filters ───────────────────────────────────────────────────────────
     students_df = get_all_students()
     all_grade_levels = sorted(students_df['grade_level'].unique().tolist())
     classes = ['All'] + sorted([c for c in students_df['class_name'].dropna().unique() if c])
     teachers = ['All'] + sorted([t for t in students_df['teacher_name'].dropna().unique() if t])
     school_years = ['All'] + sorted(students_df['school_year'].unique().tolist())
-    
-    # Main page filters
-    st.subheader("Filters")
-    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
-    
-    with filter_col1:
-        selected_grades = st.multiselect(
-            "Grade Levels",
-            all_grade_levels,
-            default=all_grade_levels,
-            help="Select one or more grade levels to display"
-        )
-        # If no grades selected, show all
+
+    f1, f2, f3, f4 = st.columns(4)
+    with f1:
+        selected_grades = st.multiselect("Grade", all_grade_levels, default=all_grade_levels)
         if not selected_grades:
             selected_grades = all_grade_levels
-        # Convert to single grade for backward compatibility with query
-        selected_grade = selected_grades[0] if len(selected_grades) == 1 else 'All'
-    
-    with filter_col2:
+    with f2:
         selected_class = st.selectbox("Class", classes)
-    
-    with filter_col3:
+    with f3:
         selected_teacher = st.selectbox("Teacher", teachers)
-    
-    with filter_col4:
+    with f4:
         selected_year = st.selectbox("School Year", school_years)
-    
-    # Sidebar filters (keep for additional filtering options)
-    st.sidebar.header("Additional Filters")
-    st.sidebar.info("Use main page filters above for primary filtering")
-    
-    # Build query: use each student's most recent year (and latest period in that year) by default
-    # When a specific year is selected, filter to that year; otherwise use latest year per student
+
+    # ── Query construction ────────────────────────────────────────────────
+    conn = get_db_connection()
     conditions = []
     params = []
-    
-    # Handle multi-select grades
+
     if selected_grades:
         if len(selected_grades) == 1:
             conditions.append('s.grade_level = %s')
@@ -79,506 +84,170 @@ def show_overview_dashboard():
             placeholders = ','.join(['%s'] * len(selected_grades))
             conditions.append(f's.grade_level IN ({placeholders})')
             params.extend(selected_grades)
-    elif selected_grade and selected_grade != 'All':
-        conditions.append('s.grade_level = %s')
-        params.append(selected_grade)
-    
+
     if selected_class != 'All':
-        conditions.append('s.class_name = %s')
-        params.append(selected_class)
+        conditions.append('s.class_name = %s'); params.append(selected_class)
     if selected_teacher != 'All':
-        conditions.append('s.teacher_name = %s')
-        params.append(selected_teacher)
-    
+        conditions.append('s.teacher_name = %s'); params.append(selected_teacher)
+
     where_clause = ' AND '.join(conditions) if conditions else '1=1'
-    
+
     if selected_year != 'All':
-        # Specific year: filter students and scores to that year, latest period per student
-        conditions.append('s.school_year = %s')
-        params.append(selected_year)
+        conditions.append('s.school_year = %s'); params.append(selected_year)
         where_clause = ' AND '.join(conditions)
         query = f'''
-            SELECT 
-                s.student_id,
-                s.student_name,
-                s.grade_level,
-                s.class_name,
-                s.teacher_name,
-                s.school_year,
-                ls.overall_literacy_score,
-                ls.risk_level,
-                ls.trend,
-                ls.assessment_period,
-                ls.calculated_at
+            SELECT s.student_id, s.student_name, s.grade_level, s.class_name,
+                   s.teacher_name, s.school_year,
+                   ls.overall_literacy_score, ls.risk_level, ls.trend,
+                   ls.assessment_period, ls.calculated_at
             FROM students s
             LEFT JOIN literacy_scores ls ON s.student_id = ls.student_id
                 AND ls.school_year = s.school_year
                 AND ls.score_id = (
                     SELECT score_id FROM literacy_scores ls2
                     WHERE ls2.student_id = s.student_id AND ls2.school_year = s.school_year
-                    ORDER BY ls2.calculated_at DESC LIMIT 1
-                )
+                    ORDER BY ls2.calculated_at DESC LIMIT 1)
             WHERE {where_clause}
             ORDER BY s.student_name, s.grade_level
         '''
     else:
-        # All years: one row per student (name) using their most recent school year and latest period
         query = f'''
-            SELECT 
-                s.student_id,
-                s.student_name,
-                s.grade_level,
-                s.class_name,
-                s.teacher_name,
-                s.school_year,
-                ls.overall_literacy_score,
-                ls.risk_level,
-                ls.trend,
-                ls.assessment_period,
-                ls.calculated_at
+            SELECT s.student_id, s.student_name, s.grade_level, s.class_name,
+                   s.teacher_name, s.school_year,
+                   ls.overall_literacy_score, ls.risk_level, ls.trend,
+                   ls.assessment_period, ls.calculated_at
             FROM students s
             LEFT JOIN literacy_scores ls ON ls.student_id = s.student_id
                 AND ls.school_year = s.school_year
                 AND ls.score_id = (
                     SELECT score_id FROM literacy_scores ls2
                     WHERE ls2.student_id = s.student_id AND ls2.school_year = s.school_year
-                    ORDER BY ls2.calculated_at DESC LIMIT 1
-                )
+                    ORDER BY ls2.calculated_at DESC LIMIT 1)
             WHERE {where_clause}
               AND s.school_year = (
                   SELECT MAX(s2.school_year) FROM students s2
-                  WHERE s2.student_name = s.student_name
-              )
+                  WHERE s2.student_name = s.student_name)
             ORDER BY s.student_name, s.grade_level
         '''
-    
+
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
-    
-    # KPIs Section
-    st.subheader("Key Performance Indicators")
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    total_students = len(df['student_id'].unique())
-    at_risk = len(df[df['risk_level'].isin(['High', 'Medium'])]) if 'risk_level' in df.columns else 0
-    avg_score = df['overall_literacy_score'].mean() if 'overall_literacy_score' in df.columns else 0
-    
-    # Get intervention coverage
-    conn = get_db_connection()
-    intervention_query = '''
-        SELECT COUNT(DISTINCT student_id) as intervention_count
-        FROM interventions
-        WHERE status = 'Active'
-    '''
-    if selected_year != 'All':
-        # Filter by students in selected year
-        intervention_query = '''
-            SELECT COUNT(DISTINCT i.student_id) as intervention_count
-            FROM interventions i
-            JOIN students s ON i.student_id = s.student_id
-            WHERE i.status = 'Active' AND s.school_year = %s
-        '''
-        intervention_df = pd.read_sql_query(intervention_query, conn, params=[selected_year])
-    else:
-        intervention_df = pd.read_sql_query(intervention_query, conn)
-    conn.close()
-    
-    intervention_count = intervention_df['intervention_count'].iloc[0] if not intervention_df.empty else 0
 
-    # Coverage should be at-risk students who have an active intervention / at-risk students
-    at_risk_with_intervention_query = '''
-        SELECT COUNT(DISTINCT s.student_id) AS covered_at_risk
+    # ── Compute KPI values ────────────────────────────────────────────────
+    total_students = len(df['student_id'].unique())
+    needs_support = len(df[df['risk_level'].isin(['High', 'Medium'])]) if 'risk_level' in df.columns else 0
+    avg_score = df['overall_literacy_score'].mean() if 'overall_literacy_score' in df.columns else 0
+    students_with_scores = len(df[df['overall_literacy_score'].notna()])
+    completion_rate = (students_with_scores / total_students * 100) if total_students > 0 else 0
+
+    # Intervention coverage
+    conn = get_db_connection()
+    cov_q = '''
+        SELECT COUNT(DISTINCT s.student_id) AS covered
         FROM students s
         JOIN literacy_scores ls ON ls.student_id = s.student_id AND ls.school_year = s.school_year
-        LEFT JOIN interventions i ON i.student_id = s.student_id AND i.status = 'Active'
+        JOIN interventions i ON i.student_id = s.student_id AND i.status = 'Active'
         WHERE ls.score_id = (
             SELECT score_id FROM literacy_scores ls2
             WHERE ls2.student_id = s.student_id AND ls2.school_year = s.school_year
-            ORDER BY ls2.calculated_at DESC
-            LIMIT 1
-        )
+            ORDER BY ls2.calculated_at DESC LIMIT 1)
           AND ls.risk_level IN ('High', 'Medium')
     '''
-    at_risk_params = []
+    cov_params = []
     if selected_year != 'All':
-        at_risk_with_intervention_query += ' AND s.school_year = %s'
-        at_risk_params.append(selected_year)
-
-    at_risk_with_intervention_query += ' AND i.student_id IS NOT NULL'
-    conn = get_db_connection()
-    at_risk_with_intervention_df = pd.read_sql_query(
-        at_risk_with_intervention_query,
-        conn,
-        params=at_risk_params
-    )
+        cov_q += ' AND s.school_year = %s'
+        cov_params.append(selected_year)
+    cov_df = pd.read_sql_query(cov_q, conn, params=cov_params)
     conn.close()
-    covered_at_risk = (
-        at_risk_with_intervention_df['covered_at_risk'].iloc[0]
-        if not at_risk_with_intervention_df.empty else 0
-    )
+    covered = cov_df['covered'].iloc[0] if not cov_df.empty else 0
+    coverage_text = f"{covered} of {needs_support}" if needs_support > 0 else "N/A"
 
-    intervention_coverage = (covered_at_risk / at_risk * 100) if at_risk > 0 else 0
-    
-    # Assessment completion rate
-    students_with_scores = len(df[df['overall_literacy_score'].notna()])
-    completion_rate = (students_with_scores / total_students * 100) if total_students > 0 else 0
-    
-    with col1:
+    # ── KPI Cards ─────────────────────────────────────────────────────────
+    st.markdown("")
+    k1, k2, k3, k4, k5 = st.columns(5)
+    with k1:
         st.metric("Total Students", total_students)
-    
-    with col2:
-        st.metric("Students at Risk", at_risk, delta=None)
-    
-    with col3:
-        st.metric("Avg Literacy Score", f"{avg_score:.1f}" if avg_score else "N/A")
-    
-    with col4:
-        st.metric("Intervention Coverage", f"{intervention_coverage:.1f}%")
-    
-    with col5:
-        st.metric("Assessment Completion", f"{completion_rate:.1f}%")
-    
-    st.markdown("---")
-    
-    # Charts Section
-    st.subheader("Analytics & Insights")
-    
-    chart_col1, chart_col2 = st.columns(2)
-    
-    with chart_col1:
-        if not df.empty and 'risk_level' in df.columns:
-            # Use first selected grade or None for chart
-            chart_grade_filter = selected_grades[0] if selected_grades and len(selected_grades) == 1 else None
-            risk_chart = create_risk_distribution_chart(df, chart_grade_filter)
-            st.plotly_chart(risk_chart, use_container_width=True)
-        else:
-            st.info("No risk level data available")
-    
-    with chart_col2:
+    with k2:
+        st.metric("Needs Support", needs_support)
+    with k3:
+        st.metric("Average Score", f"{avg_score:.1f}" if avg_score else "N/A")
+    with k4:
+        st.metric("Intervention Coverage", coverage_text)
+    with k5:
+        st.metric("Assessed", f"{completion_rate:.0f}%")
+
+    # ── Charts (two-column) ───────────────────────────────────────────────
+    st.markdown("")
+    ch1, ch2 = st.columns(2)
+
+    with ch1:
+        # Score distribution histogram
         if not df.empty and 'overall_literacy_score' in df.columns:
-            grade_chart = create_grade_comparison_chart(df)
-            st.plotly_chart(grade_chart, use_container_width=True)
-        else:
-            st.info("No score data available")
-    
-    # Trend chart (full width)
-    if selected_year != 'All':
-        trend_df = df.copy()
-        trend_df['school_year'] = selected_year
-        trend_chart = create_score_trend_chart(trend_df, selected_year)
-        st.plotly_chart(trend_chart, use_container_width=True)
-    
-    st.markdown("---")
-    
-    # Additional Graphs Section
-    st.subheader("Additional Analytics")
-    
-    add_chart_col1, add_chart_col2 = st.columns(2)
-    
-    with add_chart_col1:
-        # Score Distribution Histogram
-        if not df.empty and 'overall_literacy_score' in df.columns:
-            scores_clean = df['overall_literacy_score'].dropna()
-            if not scores_clean.empty:
-                import plotly.graph_objects as go
-                import numpy as np
-                
-                fig_dist = go.Figure()
-                fig_dist.add_trace(go.Histogram(
-                    x=scores_clean,
-                    nbinsx=20,
-                    marker_color='#007bff',
-                    opacity=0.7,
-                    name='Literacy Scores'
+            scores = df['overall_literacy_score'].dropna()
+            if not scores.empty:
+                fig = go.Figure()
+                fig.add_trace(go.Histogram(
+                    x=scores, nbinsx=15,
+                    marker_color='#5b9bd5', opacity=0.85,
+                    name='Students',
                 ))
-                
-                # Add benchmark lines
-                fig_dist.add_vline(x=70, line_dash="dash", line_color="green", 
-                                  annotation_text="Benchmark (70)", annotation_position="top")
-                fig_dist.add_vline(x=50, line_dash="dash", line_color="orange", 
-                                  annotation_text="At Risk Threshold (50)", annotation_position="top")
-                
-                fig_dist.update_layout(
-                    title='Literacy Score Distribution',
-                    xaxis_title='Literacy Score',
-                    yaxis_title='Number of Students',
-                    height=400,
-                    xaxis=dict(range=[0, 100])
+                fig.add_vline(x=70, line_dash="dash", line_color="#28a745",
+                              annotation_text="Benchmark", annotation_position="top")
+                fig.add_vline(x=50, line_dash="dash", line_color="#e67e22",
+                              annotation_text="Support Threshold", annotation_position="top")
+                fig.update_layout(
+                    title='Score Distribution',
+                    xaxis_title='Literacy Score', yaxis_title='Students',
+                    height=370, margin=dict(t=40, b=40),
+                    xaxis=dict(range=[0, 100]),
                 )
-                st.plotly_chart(fig_dist, use_container_width=True)
-            else:
-                st.info("No score data available for distribution")
-        else:
-            st.info("No score data available")
-    
-    with add_chart_col2:
-        # Risk Level Trends Over Time (if multiple periods available)
-        if not df.empty and 'risk_level' in df.columns and 'assessment_period' in df.columns:
-            # Risk level by year: one count per student per year (latest period), grouped by school_year
-            conn = get_db_connection()
-            risk_trend_query = '''
-                SELECT school_year, risk_level, COUNT(*) as count
-                FROM (
-                    SELECT ls.student_id, ls.school_year, ls.risk_level,
-                           ROW_NUMBER() OVER (PARTITION BY ls.student_id, ls.school_year ORDER BY ls.calculated_at DESC) as rn
-                    FROM literacy_scores ls
-                    JOIN students s ON ls.student_id = s.student_id
-            '''
-            trend_conditions = []
-            trend_params = []
-            
-            if selected_grades:
-                if len(selected_grades) > 1:
-                    placeholders = ','.join(['%s'] * len(selected_grades))
-                    trend_conditions.append(f's.grade_level IN ({placeholders})')
-                    trend_params.extend(selected_grades)
-                else:
-                    trend_conditions.append('s.grade_level = %s')
-                    trend_params.append(selected_grades[0])
-            
-            # Always show all years for this chart (ignore School Year filter)
-            
-            if trend_conditions:
-                risk_trend_query += ' WHERE ' + ' AND '.join(trend_conditions)
-            
-            risk_trend_query += '''
-                ) sub WHERE rn = 1
-                GROUP BY school_year, risk_level
-                ORDER BY school_year, risk_level
-            '''
-            
-            risk_trend_df = pd.read_sql_query(risk_trend_query, conn, params=trend_params)
-            conn.close()
-            
-            if not risk_trend_df.empty and len(risk_trend_df['school_year'].unique()) >= 1:
-                import plotly.graph_objects as go
-                
-                fig_risk_trend = go.Figure()
-                
-                risk_levels = ['Low', 'Medium', 'High']
-                colors = {'Low': '#28a745', 'Medium': '#ffc107', 'High': '#dc3545'}
-                
-                for risk in risk_levels:
-                    risk_data = risk_trend_df[risk_trend_df['risk_level'] == risk]
-                    if not risk_data.empty:
-                        fig_risk_trend.add_trace(go.Scatter(
-                            x=risk_data['school_year'],
-                            y=risk_data['count'],
-                            mode='lines+markers',
-                            name=risk,
-                            line=dict(color=colors.get(risk, '#6c757d'), width=3),
-                            marker=dict(size=10)
-                        ))
-                
-                fig_risk_trend.update_layout(
-                    title='Risk Level Trends by Year',
-                    xaxis_title='School Year',
-                    yaxis_title='Number of Students',
-                    height=400,
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                )
-                st.plotly_chart(fig_risk_trend, use_container_width=True)
-            else:
-                # Fallback: Show intervention effectiveness if available
-                conn = get_db_connection()
-                intervention_effect_query = '''
-                    SELECT 
-                        s.grade_level,
-                        COUNT(DISTINCT CASE WHEN i.status = 'Active' THEN i.student_id END) as with_intervention,
-                        COUNT(DISTINCT s.student_id) as total_students
-                    FROM students s
-                    LEFT JOIN interventions i ON s.student_id = i.student_id
-                '''
-                int_conditions = []
-                int_params = []
-                
-                if selected_grades:
-                    if len(selected_grades) > 1:
-                        placeholders = ','.join(['%s'] * len(selected_grades))
-                        int_conditions.append(f's.grade_level IN ({placeholders})')
-                        int_params.extend(selected_grades)
-                    else:
-                        int_conditions.append('s.grade_level = %s')
-                        int_params.append(selected_grades[0])
-                
-                if int_conditions:
-                    intervention_effect_query += ' WHERE ' + ' AND '.join(int_conditions)
-                
-                intervention_effect_query += ' GROUP BY s.grade_level'
-                
-                int_effect_df = pd.read_sql_query(intervention_effect_query, conn, params=int_params)
-                conn.close()
-                
-                if not int_effect_df.empty:
-                    import plotly.graph_objects as go
-                    
-                    int_effect_df['intervention_rate'] = (int_effect_df['with_intervention'] / int_effect_df['total_students'] * 100)
-                    
-                    fig_int = go.Figure()
-                    fig_int.add_trace(go.Bar(
-                        x=int_effect_df['grade_level'],
-                        y=int_effect_df['intervention_rate'],
-                        marker_color='#17a2b8',
-                        text=[f"{x:.1f}%" for x in int_effect_df['intervention_rate']],
-                        textposition='auto',
-                        name='Intervention Rate'
-                    ))
-                    
-                    fig_int.update_layout(
-                        title='Intervention Coverage by Grade',
-                        xaxis_title='Grade Level',
-                        yaxis_title='% of Students with Interventions',
-                        height=400,
-                        yaxis=dict(range=[0, 100])
-                    )
-                    st.plotly_chart(fig_int, use_container_width=True)
-                else:
-                    st.info("No intervention data available")
-        else:
-            st.info("No trend data available")
-    
+                st.plotly_chart(fig, use_container_width=True)
 
-    # Enhancement additions (keeps original dashboard and extends it)
-    st.subheader("Data Freshness & Completeness")
-    fresh_col1, fresh_col2 = st.columns(2)
-    latest_update = pd.to_datetime(df['calculated_at'], errors='coerce').max() if not df.empty else None
-    with fresh_col1:
-        st.metric("Last Updated", latest_update.strftime('%Y-%m-%d %H:%M') if pd.notna(latest_update) else "N/A")
-        st.metric("% Students w/ Latest Assessment", f"{completion_rate:.1f}%")
-    with fresh_col2:
-        conn = get_db_connection()
-        missing_q = "SELECT s.grade_level, COALESCE(s.class_name,'Unassigned') as class_name, COUNT(DISTINCT s.student_id) as missing_entries FROM students s LEFT JOIN literacy_scores ls ON ls.student_id=s.student_id AND ls.school_year=s.school_year WHERE " + where_clause + " AND ls.score_id IS NULL GROUP BY s.grade_level, s.class_name ORDER BY s.grade_level, s.class_name"
-        missing_df = pd.read_sql_query(missing_q, conn, params=params)
-        conn.close()
-        st.write("Missing entries by grade/class")
-        st.dataframe(missing_df if not missing_df.empty else pd.DataFrame({'status':['No missing entries']}), use_container_width=True, height=140)
+    with ch2:
+        # Average score by grade (clean bars, no error bars)
+        if not df.empty and 'overall_literacy_score' in df.columns:
+            grade_avg = df.groupby('grade_level')['overall_literacy_score'].mean().reset_index()
+            grade_order = ['Kindergarten', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth']
+            grade_avg['sort'] = grade_avg['grade_level'].apply(
+                lambda g: grade_order.index(g) if g in grade_order else len(grade_order))
+            grade_avg = grade_avg.sort_values('sort')
 
-    st.subheader("Teacher & Admin Insights")
-    conn = get_db_connection()
-    history_q = "SELECT s.student_id, s.student_name, s.school_year, ls.assessment_period, ls.risk_level, ls.overall_literacy_score, ls.reading_component, ls.phonics_component, ls.sight_words_component, ls.calculated_at FROM students s JOIN literacy_scores ls ON ls.student_id=s.student_id AND ls.school_year=s.school_year WHERE " + where_clause
-    hist_df = pd.read_sql_query(history_q, conn, params=params)
-    measure_q = "SELECT s.student_id, a.assessment_type, a.score_normalized FROM students s JOIN assessments a ON a.student_id=s.student_id WHERE " + where_clause
-    measure_df = pd.read_sql_query(measure_q, conn, params=params)
-    interv_q = "SELECT s.student_id, i.intervention_type, i.status FROM students s LEFT JOIN interventions i ON i.student_id=s.student_id WHERE " + where_clause
-    i_df = pd.read_sql_query(interv_q, conn, params=params)
-    conn.close()
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=grade_avg['grade_level'],
+                y=grade_avg['overall_literacy_score'],
+                marker_color='#5b9bd5',
+                text=[f"{v:.0f}" for v in grade_avg['overall_literacy_score']],
+                textposition='outside',
+            ))
+            fig.add_hline(y=70, line_dash="dash", line_color="#28a745",
+                          annotation_text="Benchmark", annotation_position="right")
+            fig.update_layout(
+                title='Average Score by Grade',
+                xaxis_title='', yaxis_title='Average Score',
+                height=370, margin=dict(t=40, b=40),
+                yaxis=dict(range=[0, 105]),
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
-    ins_col1, ins_col2 = st.columns(2)
-    with ins_col1:
-        moves = {'Green→Yellow': 0, 'Yellow→Red': 0, 'Green→Red': 0}
-        if not hist_df.empty:
-            order = {'Fall':1,'Winter':2,'Spring':3,'EOY':4}
-            tmp = hist_df.copy()
-            tmp['period_order'] = tmp['assessment_period'].map(order).fillna(0)
-            tmp = tmp.sort_values(['student_id','school_year','period_order','calculated_at'])
-            for _, g in tmp.groupby(['student_id','school_year']):
-                if len(g) >= 2:
-                    prev, curr = g.iloc[-2]['risk_level'], g.iloc[-1]['risk_level']
-                    t = f"{'Green' if prev=='Low' else 'Yellow' if prev=='Medium' else 'Red'}→{'Green' if curr=='Low' else 'Yellow' if curr=='Medium' else 'Red'}"
-                    if t in moves:
-                        moves[t] += 1
-        st.markdown("**Cohort movement since last window**")
-        st.dataframe(pd.DataFrame([moves]), use_container_width=True, height=100)
-        st.markdown("**Risk distribution by measure**")
-        at_risk_ids = df[df['risk_level'].isin(['High','Medium'])]['student_id'].unique().tolist()
-        risk_measure = measure_df[measure_df['student_id'].isin(at_risk_ids)] if at_risk_ids else pd.DataFrame()
-        if not risk_measure.empty:
-            rm = risk_measure.groupby('assessment_type', as_index=False)['score_normalized'].mean().sort_values('score_normalized')
-            st.bar_chart(rm.set_index('assessment_type'))
-    with ins_col2:
-        warn_rows = []
-        fc_rows = []
-        grp_rows = []
-        if not hist_df.empty:
-            order = {'Fall':1,'Winter':2,'Spring':3,'EOY':4}
-            tmp = hist_df.copy(); tmp['x'] = tmp['assessment_period'].map(order).fillna(0)
-            tmp = tmp.sort_values(['student_id','school_year','x'])
-            for sid, g in tmp.groupby('student_id'):
-                scores = g['overall_literacy_score'].dropna().tolist()
-                if len(scores) >= 3:
-                    flags = []
-                    if scores[-1] < scores[-2] < scores[-3]:
-                        flags.append('2 consecutive drops')
-                    if abs(scores[-1] - scores[-3]) <= 1:
-                        flags.append('flatline across 3 windows')
-                    if np.std(scores[-3:]) >= 8:
-                        flags.append('high variance')
-                    if flags:
-                        warn_rows.append({'student': g.iloc[-1]['student_name'], 'flags': ', '.join(flags)})
-                gg = g.dropna(subset=['overall_literacy_score'])
-                if len(gg) >= 2:
-                    m, b = np.polyfit(gg['x'], gg['overall_literacy_score'], 1)
-                    pred = m * 4 + b
-                    band = max(5, gg['overall_literacy_score'].std() if len(gg) > 2 else 8)
-                    fc_rows.append({'student': gg.iloc[-1]['student_name'], 'estimated_eoy': round(pred, 1), 'band': f"±{band:.1f}"})
-
-                    # Identify weakest component for grouping
-                    latest_row = gg.iloc[-1]
-                    component_scores = {
-                        'reading': latest_row.get('reading_component', 100),
-                        'phonics': latest_row.get('phonics_component', 100),
-                        'sight_words': latest_row.get('sight_words_component', 100),
-                    }
-                    # Replace NaN with 100 (treat missing as non-weak)
-                    component_scores = {k: (v if pd.notna(v) else 100) for k, v in component_scores.items()}
-                    weakness = min(component_scores, key=component_scores.get)
-                    grp_rows.append({'student': latest_row['student_name'], 'group': f"{latest_row['risk_level']} + {weakness}"})
-        st.markdown("**Early warning flags**")
-        st.dataframe(pd.DataFrame(warn_rows), use_container_width=True, height=120)
-        st.markdown("**Forecast + recommended groupings**")
-        st.dataframe(pd.DataFrame(fc_rows).head(8), use_container_width=True, height=100)
-        st.dataframe(pd.DataFrame(grp_rows).head(8), use_container_width=True, height=100)
-
-    st.subheader("Admin Views")
-    admin_col1, admin_col2 = st.columns(2)
-    with admin_col1:
-        if not i_df.empty:
-            merged = i_df.merge(df[['student_id','trend']], on='student_id', how='left')
-            eff = merged.groupby('intervention_type', as_index=False).agg(sample_size=('student_id','nunique'), responders=('trend', lambda s: (s=='Improving').mean()*100))
-            eff['avg_growth_rate'] = eff['responders']/20
-            st.dataframe(eff, use_container_width=True, height=160)
-    with admin_col2:
-        tiers = df['risk_level'].map({'Low':'Tier 1','Medium':'Tier 2','High':'Tier 3'}).fillna('Unknown').value_counts().rename_axis('tier').reset_index(name='count')
-        st.dataframe(tiers, use_container_width=True, height=160)
-
-    printable = df[['student_name','grade_level','class_name','teacher_name','overall_literacy_score','risk_level']].copy()
-    st.download_button('Download Printable Grade/Class Report (CSV)', printable.to_csv(index=False), 'grade_class_report.csv', 'text/csv')
-
-    all_students_df = get_all_students()
-    subgroup_cols = [c for c in ['SPED','ELL','FRL'] if c in all_students_df.columns]
-    if subgroup_cols:
-        st.markdown("### Equity lens (optional)")
-        subgroup_df = df.merge(all_students_df[['student_id'] + subgroup_cols], on='student_id', how='left')
-        parts=[]
-        for col in subgroup_cols:
-            tmp = subgroup_df.groupby(col)['risk_level'].apply(lambda s: (s.isin(['High','Medium']).mean()*100)).reset_index(name='at_risk_pct')
-            tmp['subgroup'] = col
-            parts.append(tmp)
-        st.dataframe(pd.concat(parts, ignore_index=True), use_container_width=True)
-
-    # ── Instructional Grouping (Core / Strategic / Intensive) ───────────
-    st.markdown("---")
-    st.subheader("Instructional Grouping (Acadience + ERB Blended)")
-    st.caption("Students grouped into Core (Tier 1), Strategic (Tier 2), and Intensive (Tier 3). "
-               "When ERB/CTP5 data is available, the more conservative (more supportive) tier is used.")
+    # ── Support Tiers ─────────────────────────────────────────────────────
+    st.markdown("")
+    st.subheader("Support Tiers")
+    st.caption("Students are grouped into tiers based on benchmark performance. "
+               "Core = on track, Strategic = needs targeted help, Intensive = needs significant intervention.")
 
     if not df.empty:
         grouping_df = group_students(df, df)
 
-        # Blend ERB tiers if ERB assessment data exists
         if not grouping_df.empty and 'support_level' in grouping_df.columns:
-            # Fetch all assessments to check for ERB data
+            # Blend with ERB if available
             try:
                 conn = get_db_connection()
                 all_assess_df = pd.read_sql_query(
                     '''SELECT a.student_id, a.assessment_type, a.assessment_period,
                               a.score_value, a.school_year, s.student_name, s.grade_level
-                       FROM assessments a
-                       JOIN students s ON a.student_id = s.student_id
-                       ORDER BY a.created_at''',
-                    conn
-                )
+                       FROM assessments a JOIN students s ON a.student_id = s.student_id
+                       ORDER BY a.created_at''', conn)
                 conn.close()
             except Exception:
                 all_assess_df = pd.DataFrame()
@@ -587,122 +256,222 @@ def show_overview_dashboard():
             erb_stanine_map = {}
             if not all_assess_df.empty:
                 for sname in grouping_df['student_name'].unique():
-                    student_assess = all_assess_df[all_assess_df['student_name'] == sname]
-                    erb_sums = summarize_erb_scores(student_assess, sname)
+                    sa = all_assess_df[all_assess_df['student_name'] == sname]
+                    erb_sums = summarize_erb_scores(sa, sname)
                     if erb_sums:
                         erb_tier_map[sname] = get_latest_erb_tier(erb_sums)
-                        # Get average stanine for display
-                        stanines = [s['stanine'] for s in erb_sums if s.get('stanine')]
-                        if stanines:
-                            erb_stanine_map[sname] = round(sum(stanines) / len(stanines), 1)
+                        stans = [s['stanine'] for s in erb_sums if s.get('stanine')]
+                        if stans:
+                            erb_stanine_map[sname] = round(sum(stans) / len(stans), 1)
 
-            # Apply blended tiers
             if erb_tier_map:
                 grouping_df['erb_tier'] = grouping_df['student_name'].map(erb_tier_map).fillna('Unknown')
                 grouping_df['erb_avg_stanine'] = grouping_df['student_name'].map(erb_stanine_map)
                 grouping_df['blended_tier'] = grouping_df.apply(
-                    lambda row: blend_tiers(row['support_level'], row['erb_tier']), axis=1
-                )
+                    lambda r: blend_tiers(r['support_level'], r['erb_tier']), axis=1)
             else:
                 grouping_df['erb_tier'] = 'N/A'
                 grouping_df['erb_avg_stanine'] = None
                 grouping_df['blended_tier'] = grouping_df['support_level']
 
-            tier_col = 'blended_tier' if 'blended_tier' in grouping_df.columns else 'support_level'
+            tier_col = 'blended_tier'
             tier_counts = grouping_df[tier_col].value_counts()
-            gc1, gc2, gc3 = st.columns(3)
-            with gc1:
-                core_n = tier_counts.get('Core (Tier 1)', 0)
-                st.metric("Core (Tier 1)", core_n, help="At/Above Benchmark — effective core instruction")
-            with gc2:
-                strat_n = tier_counts.get('Strategic (Tier 2)', 0)
-                st.metric("Strategic (Tier 2)", strat_n, help="Below Benchmark — targeted supplemental support")
-            with gc3:
-                intens_n = tier_counts.get('Intensive (Tier 3)', 0)
-                st.metric("Intensive (Tier 3)", intens_n, help="Well Below Benchmark — intensive intervention needed")
 
-            # Show grouping table with color coding
-            display_cols = ['student_name', 'grade_level', 'score', 'benchmark_status', 'support_level']
-            display_names = ['Student', 'Grade', 'Score', 'Benchmark Status', 'Acadience Tier']
-            if 'erb_avg_stanine' in grouping_df.columns and grouping_df['erb_avg_stanine'].notna().any():
+            tc1, tc2, tc3 = st.columns(3)
+            with tc1:
+                st.metric("Core", tier_counts.get('Core (Tier 1)', 0),
+                          help="On track -- continue effective core instruction")
+            with tc2:
+                st.metric("Strategic", tier_counts.get('Strategic (Tier 2)', 0),
+                          help="Below benchmark -- needs targeted supplemental support")
+            with tc3:
+                st.metric("Intensive", tier_counts.get('Intensive (Tier 3)', 0),
+                          help="Well below benchmark -- needs significant intervention")
+
+            # Build display table
+            display_cols = ['student_name', 'grade_level', 'score', 'benchmark_status']
+            display_names = ['Student', 'Grade', 'Score', 'Benchmark Status']
+            has_erb = 'erb_avg_stanine' in grouping_df.columns and grouping_df['erb_avg_stanine'].notna().any()
+            if has_erb:
                 display_cols += ['erb_avg_stanine', 'erb_tier']
-                display_names += ['ERB Avg Stanine', 'ERB Tier']
+                display_names += ['ERB Stanine', 'ERB Tier']
             display_cols += [tier_col, 'weakest_skill']
-            display_names += ['Blended Tier', 'Weakest Skill']
+            display_names += ['Support Tier', 'Focus Area']
 
-            display_groups = grouping_df[display_cols].copy()
-            display_groups.columns = display_names
-            display_groups['Score'] = display_groups['Score'].apply(lambda x: f"{x:.1f}" if pd.notna(x) else "N/A")
-            if 'ERB Avg Stanine' in display_groups.columns:
-                display_groups['ERB Avg Stanine'] = display_groups['ERB Avg Stanine'].apply(
-                    lambda x: f"{x:.1f}" if pd.notna(x) else "N/A"
-                )
-            display_groups = display_groups.sort_values(['Blended Tier', 'Student'])
+            tbl = grouping_df[display_cols].copy()
+            tbl.columns = display_names
+            tbl['Score'] = tbl['Score'].apply(lambda x: f"{x:.0f}" if pd.notna(x) else "--")
+            if has_erb:
+                tbl['ERB Stanine'] = tbl['ERB Stanine'].apply(lambda x: f"{x:.1f}" if pd.notna(x) else "--")
+            tbl['Focus Area'] = tbl['Focus Area'].fillna('--')
+            tbl = tbl.sort_values(['Support Tier', 'Student'])
 
-            def color_tier(val):
-                if 'Core' in str(val):
-                    return 'background-color: #d4edda; color: #155724'
-                elif 'Strategic' in str(val):
-                    return 'background-color: #fff3cd; color: #856404'
-                elif 'Intensive' in str(val):
-                    return 'background-color: #f8d7da; color: #721c24'
-                return ''
+            style_cols = ['Support Tier']
+            if has_erb and 'ERB Tier' in tbl.columns:
+                style_cols.append('ERB Tier')
+            styled = tbl.style.map(_color_tier, subset=style_cols)
+            st.dataframe(styled, use_container_width=True, height=300)
 
-            tier_style_cols = ['Blended Tier']
-            if 'Acadience Tier' in display_groups.columns:
-                tier_style_cols.append('Acadience Tier')
-            if 'ERB Tier' in display_groups.columns:
-                tier_style_cols.append('ERB Tier')
-            styled_groups = display_groups.style.map(color_tier, subset=tier_style_cols)
-            st.dataframe(styled_groups, use_container_width=True, height=300)
+            st.download_button('Download Grouping Report (CSV)',
+                               grouping_df.to_csv(index=False),
+                               'support_tiers.csv', 'text/csv')
 
-            # Download grouping report
-            st.download_button(
-                'Download Grouping Report (CSV)',
-                grouping_df.to_csv(index=False),
-                'instructional_grouping.csv', 'text/csv'
-            )
+    # ── Student Roster ────────────────────────────────────────────────────
+    st.markdown("")
+    st.subheader("Student Roster")
 
-    st.markdown("---")
-    
-    # Student Table Section
-    st.subheader("Student List")
-    
-    # Prepare table data
-    display_df = df[['student_name', 'grade_level', 'class_name', 'teacher_name', 
-                      'overall_literacy_score', 'risk_level', 'trend', 'assessment_period']].copy()
-    
-    display_df.columns = ['Student Name', 'Grade', 'Class', 'Teacher', 
-                          'Literacy Score', 'Risk Level', 'Trend', 'Last Assessment']
-    
-    # Format scores
-    if 'Literacy Score' in display_df.columns:
-        display_df['Literacy Score'] = display_df['Literacy Score'].apply(
-            lambda x: f"{x:.1f}" if pd.notna(x) else "N/A"
-        )
-    
-    # Add color coding for risk levels
-    def color_risk_level(val):
-        if val == 'High':
-            return 'background-color: #dc3545; color: white'
-        elif val == 'Medium':
-            return 'background-color: #ffc107; color: black'
-        elif val == 'Low':
-            return 'background-color: #28a745; color: white'
-        return ''
-    
-    # Display table
-    if not display_df.empty:
-        styled_df = display_df.style.map(color_risk_level, subset=['Risk Level'])
-        st.dataframe(styled_df, use_container_width=True, height=400)
-        
-        # Download button
-        csv = display_df.to_csv(index=False)
-        st.download_button(
-            label="Download as CSV",
-            data=csv,
-            file_name=f"literacy_overview_{selected_year if selected_year != 'All' else 'all'}.csv",
-            mime="text/csv"
-        )
+    if not df.empty:
+        roster = df[['student_name', 'grade_level', 'class_name', 'teacher_name',
+                      'overall_literacy_score', 'risk_level', 'assessment_period']].copy()
+        roster.columns = ['Student', 'Grade', 'Class', 'Teacher',
+                          'Score', 'Support Need', 'Last Period']
+        roster['Score'] = roster['Score'].apply(lambda x: f"{x:.0f}" if pd.notna(x) else "--")
+        roster['Support Need'] = roster['Support Need'].apply(_support_label)
+        roster = roster.sort_values(['Student', 'Grade'])
+
+        styled_roster = roster.style.map(_color_support, subset=['Support Need'])
+        st.dataframe(styled_roster, use_container_width=True, height=400)
+
+        st.download_button('Download Student Roster (CSV)',
+                           roster.to_csv(index=False),
+                           f"student_roster_{selected_year if selected_year != 'All' else 'all'}.csv",
+                           'text/csv')
     else:
         st.info("No students found with the selected filters.")
+
+    # ── Detailed Analytics (collapsible) ──────────────────────────────────
+    st.markdown("")
+    with st.expander("Detailed Analytics", expanded=False):
+
+        da1, da2 = st.columns(2)
+
+        with da1:
+            # Support level trends by year
+            if not df.empty and 'risk_level' in df.columns:
+                conn = get_db_connection()
+                trend_q = '''
+                    SELECT school_year, risk_level, COUNT(*) as count
+                    FROM (
+                        SELECT ls.student_id, ls.school_year, ls.risk_level,
+                               ROW_NUMBER() OVER (PARTITION BY ls.student_id, ls.school_year
+                                                  ORDER BY ls.calculated_at DESC) as rn
+                        FROM literacy_scores ls
+                        JOIN students s ON ls.student_id = s.student_id
+                '''
+                t_conds, t_params = [], []
+                if selected_grades:
+                    if len(selected_grades) == 1:
+                        t_conds.append('s.grade_level = %s'); t_params.append(selected_grades[0])
+                    else:
+                        ph = ','.join(['%s'] * len(selected_grades))
+                        t_conds.append(f's.grade_level IN ({ph})'); t_params.extend(selected_grades)
+                if t_conds:
+                    trend_q += ' WHERE ' + ' AND '.join(t_conds)
+                trend_q += ') sub WHERE rn = 1 GROUP BY school_year, risk_level ORDER BY school_year'
+                trend_df = pd.read_sql_query(trend_q, conn, params=t_params)
+                conn.close()
+
+                if not trend_df.empty:
+                    fig = go.Figure()
+                    for risk, color in [('Low', '#28a745'), ('Medium', '#e67e22'), ('High', '#dc3545')]:
+                        rd = trend_df[trend_df['risk_level'] == risk]
+                        if not rd.empty:
+                            fig.add_trace(go.Scatter(
+                                x=rd['school_year'], y=rd['count'],
+                                mode='lines+markers', name=_SUPPORT_LABEL.get(risk, risk),
+                                line=dict(color=color, width=2), marker=dict(size=8)))
+                    fig.update_layout(title='Support Need Trends by Year',
+                                      xaxis_title='Year', yaxis_title='Students',
+                                      height=320, margin=dict(t=40, b=40),
+                                      legend=dict(orientation='h', y=1.12))
+                    st.plotly_chart(fig, use_container_width=True)
+
+        with da2:
+            # Early warning flags
+            conn = get_db_connection()
+            hist_q = ("SELECT s.student_id, s.student_name, ls.assessment_period, "
+                      "ls.overall_literacy_score, ls.calculated_at "
+                      "FROM students s JOIN literacy_scores ls "
+                      "ON ls.student_id=s.student_id AND ls.school_year=s.school_year "
+                      "WHERE " + where_clause)
+            hist_df = pd.read_sql_query(hist_q, conn, params=params)
+            conn.close()
+
+            warn_rows = []
+            if not hist_df.empty:
+                order = {'Fall': 1, 'Winter': 2, 'Spring': 3, 'EOY': 4}
+                tmp = hist_df.copy()
+                tmp['x'] = tmp['assessment_period'].map(order).fillna(0)
+                tmp = tmp.sort_values(['student_id', 'x', 'calculated_at'])
+                for _, g in tmp.groupby('student_id'):
+                    scores = g['overall_literacy_score'].dropna().tolist()
+                    if len(scores) >= 3:
+                        flags = []
+                        if scores[-1] < scores[-2] < scores[-3]:
+                            flags.append('Declining trend')
+                        if abs(scores[-1] - scores[-3]) <= 1:
+                            flags.append('No progress')
+                        if np.std(scores[-3:]) >= 8:
+                            flags.append('Inconsistent scores')
+                        if flags:
+                            warn_rows.append({
+                                'Student': g.iloc[-1]['student_name'],
+                                'Flags': ', '.join(flags),
+                            })
+            if warn_rows:
+                st.markdown("**Early Warning Flags**")
+                st.dataframe(pd.DataFrame(warn_rows), use_container_width=True, height=200)
+            else:
+                st.info("No early warning flags at this time.")
+
+        # Average score by assessment type (for at-risk students)
+        conn = get_db_connection()
+        measure_q = ("SELECT a.assessment_type, AVG(a.score_normalized) as avg_score, "
+                     "COUNT(*) as entries "
+                     "FROM assessments a JOIN students s ON a.student_id=s.student_id "
+                     "WHERE " + where_clause + " AND a.score_normalized IS NOT NULL "
+                     "GROUP BY a.assessment_type ORDER BY avg_score")
+        measure_df = pd.read_sql_query(measure_q, conn, params=params)
+        conn.close()
+
+        if not measure_df.empty:
+            st.markdown("**Average Score by Assessment Type**")
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=measure_df['assessment_type'],
+                y=measure_df['avg_score'],
+                marker_color='#5b9bd5',
+                text=[f"{v:.0f}" for v in measure_df['avg_score']],
+                textposition='outside',
+            ))
+            fig.update_layout(
+                xaxis_title='', yaxis_title='Average Score',
+                height=300, margin=dict(t=20, b=40),
+                yaxis=dict(range=[0, max(measure_df['avg_score'].max() * 1.15, 100)]),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+    # ── Data Quality (collapsible) ────────────────────────────────────────
+    with st.expander("Data Quality", expanded=False):
+        dq1, dq2 = st.columns(2)
+        latest_update = pd.to_datetime(df['calculated_at'], errors='coerce').max() if not df.empty else None
+        with dq1:
+            st.metric("Last Updated",
+                      latest_update.strftime('%Y-%m-%d %H:%M') if pd.notna(latest_update) else "N/A")
+            st.metric("Students Assessed", f"{students_with_scores} of {total_students}")
+        with dq2:
+            conn = get_db_connection()
+            missing_q = ("SELECT s.grade_level as Grade, "
+                         "COALESCE(s.class_name,'Unassigned') as Class, "
+                         "COUNT(DISTINCT s.student_id) as Missing "
+                         "FROM students s LEFT JOIN literacy_scores ls "
+                         "ON ls.student_id=s.student_id AND ls.school_year=s.school_year "
+                         "WHERE " + where_clause + " AND ls.score_id IS NULL "
+                         "GROUP BY s.grade_level, s.class_name ORDER BY s.grade_level")
+            missing_df = pd.read_sql_query(missing_q, conn, params=params)
+            conn.close()
+            if not missing_df.empty:
+                st.markdown("**Missing Assessments**")
+                st.dataframe(missing_df, use_container_width=True, height=160)
+            else:
+                st.success("All students have assessment data.")
