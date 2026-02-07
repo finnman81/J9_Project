@@ -441,8 +441,15 @@ def generate_parent_report_html(student_name: str, grade: str, teacher: str,
                                 components: Dict[str, float],
                                 interventions: List[Dict],
                                 goals: List[Dict] = None,
-                                benchmark_status: str = None) -> str:
-    """Generate a polished, one-page parent report as HTML."""
+                                benchmark_status: str = None,
+                                erb_scores: List[Dict] = None) -> str:
+    """Generate a polished, one-page parent report as HTML.
+
+    Parameters
+    ----------
+    erb_scores : list of dicts, optional
+        Each dict should have: label, stanine, percentile, classification, description
+    """
 
     status = benchmark_status or ('At Benchmark' if overall_score and overall_score >= 70
                                   else ('Below Benchmark' if overall_score and overall_score >= 50
@@ -523,6 +530,31 @@ def generate_parent_report_html(student_name: str, grade: str, teacher: str,
             <li>Ask about supplemental programs or tutoring options</li>
         </ul>'''
 
+    # ERB / CTP5 section
+    erb_section = ''
+    if erb_scores:
+        erb_rows = ''
+        for es in erb_scores:
+            s_val = es.get('stanine')
+            p_val = es.get('percentile')
+            s_color = '#28a745' if s_val and s_val >= 7 else ('#ffc107' if s_val and s_val >= 4 else '#dc3545')
+            erb_rows += f'''<tr>
+                <td>{es.get('label', '')}</td>
+                <td style="text-align:center">{s_val or 'N/A'}</td>
+                <td style="text-align:center;color:{s_color};font-weight:bold">{es.get('classification', 'N/A')}</td>
+                <td style="text-align:center">{int(p_val) if p_val else 'N/A'}th</td>
+                <td>{es.get('description', '')}</td>
+            </tr>'''
+        erb_section = f'''
+        <h2>ERB / CTP5 Assessment Results</h2>
+        <p>The CTP5 is a norm-referenced assessment that compares your child's performance to peers
+        in independent schools nationwide. Stanines range from 1 (lowest) to 9 (highest), with 4-6
+        being average.</p>
+        <table>
+          <tr><th>Subject Area</th><th>Stanine</th><th>Performance</th><th>Percentile</th><th>What This Measures</th></tr>
+          {erb_rows}
+        </table>'''
+
     html = f'''<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
@@ -575,6 +607,8 @@ def generate_parent_report_html(student_name: str, grade: str, teacher: str,
 </table>
 
 {goal_section}
+
+{erb_section}
 
 <h2>Current Interventions</h2>
 <table>

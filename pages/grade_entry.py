@@ -12,6 +12,10 @@ from database import (
 from calculations import process_assessment_score
 from utils import recalculate_literacy_scores
 from benchmarks import get_benchmark_status, benchmark_emoji, get_support_level
+from erb_scoring import (
+    ERB_SUBTESTS, ERB_SUBTEST_LABELS, classify_stanine, stanine_emoji,
+    erb_stanine_to_tier, build_erb_score_value,
+)
 from datetime import datetime
 
 def show_grade_entry():
@@ -174,10 +178,18 @@ def show_single_entry_form():
                 "FSF",
                 "Maze",
                 "Retell",
+                "--- ERB / CTP5 ---",
+                "ERB_Reading_Comp",
+                "ERB_Vocabulary",
+                "ERB_Writing_Mechanics",
+                "ERB_Writing_Concepts",
+                "ERB_Mathematics",
+                "ERB_Verbal_Reasoning",
+                "ERB_Quant_Reasoning",
             ]
         )
         # Warn if separator selected
-        if assessment_type == "--- Acadience Measures ---":
+        if assessment_type.startswith("---"):
             st.warning("Please select an actual assessment type above or below the separator.")
     
     with col2:
@@ -258,6 +270,37 @@ def show_single_entry_form():
                 st.info(f"{icon} **{bm_st}** — {support}")
             else:
                 st.caption("No Acadience benchmark data for this measure/grade/period combination.")
+
+    elif assessment_type in ERB_SUBTESTS:
+        subtest_label = ERB_SUBTEST_LABELS.get(assessment_type, assessment_type)
+        st.markdown(f"**{subtest_label}** — Enter all available score types:")
+        erb_c1, erb_c2, erb_c3, erb_c4 = st.columns(4)
+        with erb_c1:
+            erb_stanine = st.number_input("Stanine (1-9)", min_value=1, max_value=9, value=5, step=1, key="erb_stanine")
+        with erb_c2:
+            erb_percentile = st.number_input("Percentile (1-99)", min_value=1, max_value=99, value=50, step=1, key="erb_pctile")
+        with erb_c3:
+            erb_scale = st.number_input("Scale Score", min_value=0, value=0, step=1, key="erb_scale",
+                                        help="Leave at 0 if not available")
+        with erb_c4:
+            erb_growth = st.number_input("Growth Percentile (1-99)", min_value=0, max_value=99, value=0, step=1,
+                                         key="erb_growth", help="Leave at 0 if not available")
+
+        # Build composite score value string for storage
+        score_value = build_erb_score_value(
+            stanine=erb_stanine,
+            percentile=erb_percentile,
+            scale_score=erb_scale if erb_scale > 0 else None,
+            growth_percentile=erb_growth if erb_growth > 0 else None,
+        )
+        # Normalize using percentile (0-100 compatible)
+        score_normalized = float(erb_percentile)
+
+        # Live classification preview
+        classification = classify_stanine(erb_stanine)
+        icon = stanine_emoji(erb_stanine)
+        tier = erb_stanine_to_tier(erb_stanine)
+        st.info(f"{icon} **Stanine {erb_stanine} — {classification}** | {tier}")
 
     # Additional Fields
     st.markdown("### Additional Information")

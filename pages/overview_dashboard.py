@@ -16,6 +16,10 @@ from benchmarks import (
     get_benchmark_status, get_support_level, benchmark_color,
     benchmark_emoji, group_students,
 )
+from erb_scoring import (
+    ERB_SUBTESTS, ERB_SUBTEST_LABELS, summarize_erb_scores,
+    get_latest_erb_tier, blend_tiers, stanine_color, stanine_emoji,
+)
 
 def show_overview_dashboard():
     st.title("📊 Overview Dashboard")
@@ -555,13 +559,57 @@ def show_overview_dashboard():
 
     # ── Instructional Grouping (Core / Strategic / Intensive) ───────────
     st.markdown("---")
-    st.subheader("Instructional Grouping (Acadience-Aligned)")
-    st.caption("Students grouped by benchmark status into Core (Tier 1), Strategic (Tier 2), and Intensive (Tier 3) support levels.")
+    st.subheader("Instructional Grouping (Acadience + ERB Blended)")
+    st.caption("Students grouped into Core (Tier 1), Strategic (Tier 2), and Intensive (Tier 3). "
+               "When ERB/CTP5 data is available, the more conservative (more supportive) tier is used.")
 
     if not df.empty:
         grouping_df = group_students(df, df)
+
+        # Blend ERB tiers if ERB assessment data exists
         if not grouping_df.empty and 'support_level' in grouping_df.columns:
-            tier_counts = grouping_df['support_level'].value_counts()
+            # Fetch all assessments to check for ERB data
+            try:
+                conn = get_db_connection()
+                all_assess_df = pd.read_sql_query(
+                    '''SELECT a.student_id, a.assessment_type, a.assessment_period,
+                              a.score_value, a.school_year, s.student_name, s.grade_level
+                       FROM assessments a
+                       JOIN students s ON a.student_id = s.student_id
+                       ORDER BY a.created_at''',
+                    conn
+                )
+                conn.close()
+            except Exception:
+                all_assess_df = pd.DataFrame()
+
+            erb_tier_map = {}
+            erb_stanine_map = {}
+            if not all_assess_df.empty:
+                for sname in grouping_df['student_name'].unique():
+                    student_assess = all_assess_df[all_assess_df['student_name'] == sname]
+                    erb_sums = summarize_erb_scores(student_assess, sname)
+                    if erb_sums:
+                        erb_tier_map[sname] = get_latest_erb_tier(erb_sums)
+                        # Get average stanine for display
+                        stanines = [s['stanine'] for s in erb_sums if s.get('stanine')]
+                        if stanines:
+                            erb_stanine_map[sname] = round(sum(stanines) / len(stanines), 1)
+
+            # Apply blended tiers
+            if erb_tier_map:
+                grouping_df['erb_tier'] = grouping_df['student_name'].map(erb_tier_map).fillna('Unknown')
+                grouping_df['erb_avg_stanine'] = grouping_df['student_name'].map(erb_stanine_map)
+                grouping_df['blended_tier'] = grouping_df.apply(
+                    lambda row: blend_tiers(row['support_level'], row['erb_tier']), axis=1
+                )
+            else:
+                grouping_df['erb_tier'] = 'N/A'
+                grouping_df['erb_avg_stanine'] = None
+                grouping_df['blended_tier'] = grouping_df['support_level']
+
+            tier_col = 'blended_tier' if 'blended_tier' in grouping_df.columns else 'support_level'
+            tier_counts = grouping_df[tier_col].value_counts()
             gc1, gc2, gc3 = st.columns(3)
             with gc1:
                 core_n = tier_counts.get('Core (Tier 1)', 0)
@@ -574,10 +622,22 @@ def show_overview_dashboard():
                 st.metric("Intensive (Tier 3)", intens_n, help="Well Below Benchmark — intensive intervention needed")
 
             # Show grouping table with color coding
-            display_groups = grouping_df[['student_name', 'grade_level', 'score', 'benchmark_status', 'support_level', 'weakest_skill']].copy()
-            display_groups.columns = ['Student', 'Grade', 'Score', 'Benchmark Status', 'Support Level', 'Weakest Skill']
+            display_cols = ['student_name', 'grade_level', 'score', 'benchmark_status', 'support_level']
+            display_names = ['Student', 'Grade', 'Score', 'Benchmark Status', 'Acadience Tier']
+            if 'erb_avg_stanine' in grouping_df.columns and grouping_df['erb_avg_stanine'].notna().any():
+                display_cols += ['erb_avg_stanine', 'erb_tier']
+                display_names += ['ERB Avg Stanine', 'ERB Tier']
+            display_cols += [tier_col, 'weakest_skill']
+            display_names += ['Blended Tier', 'Weakest Skill']
+
+            display_groups = grouping_df[display_cols].copy()
+            display_groups.columns = display_names
             display_groups['Score'] = display_groups['Score'].apply(lambda x: f"{x:.1f}" if pd.notna(x) else "N/A")
-            display_groups = display_groups.sort_values(['Support Level', 'Student'])
+            if 'ERB Avg Stanine' in display_groups.columns:
+                display_groups['ERB Avg Stanine'] = display_groups['ERB Avg Stanine'].apply(
+                    lambda x: f"{x:.1f}" if pd.notna(x) else "N/A"
+                )
+            display_groups = display_groups.sort_values(['Blended Tier', 'Student'])
 
             def color_tier(val):
                 if 'Core' in str(val):
@@ -588,7 +648,12 @@ def show_overview_dashboard():
                     return 'background-color: #f8d7da; color: #721c24'
                 return ''
 
-            styled_groups = display_groups.style.map(color_tier, subset=['Support Level'])
+            tier_style_cols = ['Blended Tier']
+            if 'Acadience Tier' in display_groups.columns:
+                tier_style_cols.append('Acadience Tier')
+            if 'ERB Tier' in display_groups.columns:
+                tier_style_cols.append('ERB Tier')
+            styled_groups = display_groups.style.map(color_tier, subset=tier_style_cols)
             st.dataframe(styled_groups, use_container_width=True, height=300)
 
             # Download grouping report

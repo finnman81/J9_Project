@@ -21,6 +21,13 @@ from benchmarks import (
     generate_parent_report_html, ACADIENCE_MEASURES, MEASURE_LABELS,
     MEASURES_BY_GRADE, GRADE_ALIASES, PERIOD_MAP,
 )
+from erb_scoring import (
+    ERB_SUBTESTS, ERB_SUBTEST_LABELS, ERB_SUBTEST_DESCRIPTIONS,
+    summarize_erb_scores, classify_stanine, stanine_color, stanine_emoji,
+    classify_percentile, percentile_color,
+    classify_growth_percentile, growth_percentile_color,
+    erb_stanine_to_tier, get_latest_erb_tier, blend_tiers,
+)
 
 def show_student_detail():
     st.title("👤 Student Detail")
@@ -756,6 +763,134 @@ def show_student_detail():
     else:
         st.info("At least two assessment periods needed for growth analysis.")
 
+    # ── ERB / CTP5 Scores ──────────────────────────────────────────────
+    erb_summaries = []
+    if not assessments_df.empty:
+        erb_summaries = summarize_erb_scores(assessments_df, student_name)
+
+    if erb_summaries:
+        st.subheader("ERB / CTP5 Assessment Scores")
+        st.caption("Norm-referenced scores from the Comprehensive Testing Program (CTP5) by ERB.")
+
+        # Latest ERB scores per subtest
+        import plotly.graph_objects as go
+
+        # Group by subtest, take latest entry per subtest
+        erb_latest = {}
+        for s in erb_summaries:
+            key = s['subtest']
+            if key not in erb_latest:
+                erb_latest[key] = s
+            else:
+                # Keep the one from the later period/year
+                erb_latest[key] = s  # already sorted by query order (latest last)
+
+        # ── Stanine bar chart ─────────────────────────────
+        erb_chart_col1, erb_chart_col2 = st.columns(2)
+        with erb_chart_col1:
+            labels = [erb_latest[k]['label'] for k in erb_latest]
+            stanines = [erb_latest[k]['stanine'] or 0 for k in erb_latest]
+            bar_colors = [stanine_color(s) for s in stanines]
+
+            fig_stanine = go.Figure()
+            fig_stanine.add_trace(go.Bar(
+                x=labels, y=stanines,
+                marker_color=bar_colors,
+                text=[f"{s}" for s in stanines],
+                textposition='auto',
+            ))
+            # Add band lines
+            fig_stanine.add_hrect(y0=0, y1=3.5, fillcolor="#dc3545", opacity=0.06, line_width=0)
+            fig_stanine.add_hrect(y0=3.5, y1=6.5, fillcolor="#ffc107", opacity=0.06, line_width=0)
+            fig_stanine.add_hrect(y0=6.5, y1=9.5, fillcolor="#28a745", opacity=0.06, line_width=0)
+            fig_stanine.update_layout(
+                title='ERB Stanine Scores by Subtest',
+                yaxis_title='Stanine', yaxis=dict(range=[0, 9.5], dtick=1),
+                xaxis_title='', height=350, xaxis=dict(tickangle=30),
+            )
+            st.plotly_chart(fig_stanine, use_container_width=True)
+
+        # ── Percentile display ────────────────────────────
+        with erb_chart_col2:
+            percentiles = [erb_latest[k].get('percentile') or 0 for k in erb_latest]
+            pct_colors = [percentile_color(p) for p in percentiles]
+
+            fig_pct = go.Figure()
+            fig_pct.add_trace(go.Bar(
+                x=labels, y=percentiles,
+                marker_color=pct_colors,
+                text=[f"{int(p)}th" for p in percentiles],
+                textposition='auto',
+            ))
+            fig_pct.add_hline(y=50, line_dash="dash", line_color="#6c757d",
+                              annotation_text="50th Percentile", annotation_position="right")
+            fig_pct.update_layout(
+                title='ERB Percentile Ranks by Subtest',
+                yaxis_title='Percentile', yaxis=dict(range=[0, 100]),
+                xaxis_title='', height=350, xaxis=dict(tickangle=30),
+            )
+            st.plotly_chart(fig_pct, use_container_width=True)
+
+        # ── Detail table ──────────────────────────────────
+        erb_table_rows = []
+        for s in erb_summaries:
+            icon = stanine_emoji(s['stanine'])
+            growth_class = classify_growth_percentile(s['growth_percentile']) if s['growth_percentile'] else 'N/A'
+            erb_table_rows.append({
+                'Subtest': s['label'],
+                'Period': s['period'],
+                'Year': s.get('school_year', ''),
+                'Stanine': f"{icon} {s['stanine']}" if s['stanine'] else 'N/A',
+                'Percentile': f"{int(s['percentile'])}th" if s['percentile'] else 'N/A',
+                'Scale Score': int(s['scale_score']) if s['scale_score'] else 'N/A',
+                'Growth %ile': f"{int(s['growth_percentile'])}" if s['growth_percentile'] else 'N/A',
+                'Growth Status': growth_class,
+                'Tier': s['tier'],
+            })
+        erb_table_df = pd.DataFrame(erb_table_rows)
+
+        def color_erb_tier(val):
+            if 'Core' in str(val):
+                return 'background-color: #d4edda; color: #155724'
+            elif 'Strategic' in str(val):
+                return 'background-color: #fff3cd; color: #856404'
+            elif 'Intensive' in str(val):
+                return 'background-color: #f8d7da; color: #721c24'
+            return ''
+
+        styled_erb = erb_table_df.style.map(color_erb_tier, subset=['Tier'])
+        st.dataframe(styled_erb, use_container_width=True, height=250)
+
+        # ── Growth percentile tracking across years ───────
+        growth_data = [s for s in erb_summaries if s.get('growth_percentile')]
+        if growth_data:
+            st.markdown("#### Growth Percentile Tracking")
+            growth_chart_data = {}
+            for s in growth_data:
+                subtest = s['label']
+                if subtest not in growth_chart_data:
+                    growth_chart_data[subtest] = {'periods': [], 'values': []}
+                period_label = f"{s.get('grade_level', '')} {s['period']} {s.get('school_year', '')}"
+                growth_chart_data[subtest]['periods'].append(period_label)
+                growth_chart_data[subtest]['values'].append(s['growth_percentile'])
+
+            fig_growth = go.Figure()
+            for subtest, data in growth_chart_data.items():
+                fig_growth.add_trace(go.Scatter(
+                    x=data['periods'], y=data['values'],
+                    mode='lines+markers', name=subtest,
+                ))
+            fig_growth.add_hrect(y0=0, y1=35, fillcolor="#dc3545", opacity=0.05, line_width=0)
+            fig_growth.add_hrect(y0=35, y1=65, fillcolor="#17a2b8", opacity=0.05, line_width=0)
+            fig_growth.add_hrect(y0=65, y1=100, fillcolor="#28a745", opacity=0.05, line_width=0)
+            fig_growth.update_layout(
+                title='ERB Growth Percentile Over Time',
+                yaxis_title='Growth Percentile', yaxis=dict(range=[0, 100]),
+                height=350, xaxis=dict(tickangle=30),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            )
+            st.plotly_chart(fig_growth, use_container_width=True)
+
     # ── Teacher Outputs (Parent Report + Intervention Export) ─────────
     st.subheader("Teacher Outputs")
     out1, out2 = st.columns(2)
@@ -780,6 +915,23 @@ def show_student_detail():
                         for _, gr in gf.iterrows():
                             goal_list.append(gr.to_dict())
 
+            # Prepare ERB scores for parent report
+            erb_report_scores = None
+            if erb_summaries:
+                erb_report_scores = []
+                seen_subtests = set()
+                for es in reversed(erb_summaries):  # latest first
+                    if es['subtest'] not in seen_subtests:
+                        seen_subtests.add(es['subtest'])
+                        erb_report_scores.append({
+                            'label': es['label'],
+                            'stanine': es['stanine'],
+                            'percentile': es.get('percentile'),
+                            'classification': es.get('classification', ''),
+                            'description': ERB_SUBTEST_DESCRIPTIONS.get(es['subtest'], ''),
+                        })
+                erb_report_scores.reverse()
+
             report_html = generate_parent_report_html(
                 student_name=student_name,
                 grade=selected_student_row.get('grade_level', ''),
@@ -792,6 +944,7 @@ def show_student_detail():
                 interventions=inv_list,
                 goals=goal_list if goal_list else None,
                 benchmark_status=bm_status,
+                erb_scores=erb_report_scores,
             )
             st.download_button(
                 'Download Parent Report (HTML/PDF-ready)',
