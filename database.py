@@ -2,13 +2,33 @@
 Database connection and schema setup for Literacy Assessment System
 Uses PostgreSQL via Supabase (connected with psycopg2)
 """
+import warnings
+warnings.filterwarnings('ignore', message='pandas only supports SQLAlchemy')
+
 import psycopg2
 import psycopg2.extras
+from psycopg2.extensions import register_adapter, AsIs
 import pandas as pd
+import numpy as np
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import os
 import streamlit as st
+
+# ---------------------------------------------------------------------------
+# Register numpy types so psycopg2 can handle them as query parameters
+# ---------------------------------------------------------------------------
+
+def _adapt_numpy_int(val):
+    return AsIs(int(val))
+
+def _adapt_numpy_float(val):
+    return AsIs(float(val))
+
+for _np_int_type in [np.int64, np.int32, np.int16, np.int8, np.intp]:
+    register_adapter(_np_int_type, _adapt_numpy_int)
+for _np_float_type in [np.float64, np.float32, np.float16]:
+    register_adapter(_np_float_type, _adapt_numpy_float)
 
 # ---------------------------------------------------------------------------
 # Connection

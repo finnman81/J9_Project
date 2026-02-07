@@ -579,7 +579,7 @@ def show_overview_dashboard():
     
     # Display table
     if not display_df.empty:
-        styled_df = display_df.style.applymap(color_risk_level, subset=['Risk Level'])
+        styled_df = display_df.style.map(color_risk_level, subset=['Risk Level'])
         st.dataframe(styled_df, use_container_width=True, height=400)
         
         # Download button
