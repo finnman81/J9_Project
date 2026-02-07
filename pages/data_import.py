@@ -36,10 +36,11 @@ def show_data_import():
             st.subheader("Data Preview")
             st.dataframe(df.head(10), use_container_width=True)
 
-            # Enhancement: Mapping wizard
-            st.subheader("Mapping Wizard")
+            # Enhancement: Mapping wizard (preview only - the import uses standard column names)
+            st.subheader("Column Mapping Preview")
+            st.caption("Preview how your file columns map to the expected fields. The import below uses standard column names automatically.")
             target_fields = ['Student_Name','Grade_Level','Concerns']
-            mapping_cols = ['<skip>'] + list(df.columns)
+            mapping_cols = ['(none)'] + list(df.columns)
             selected_mappings = {}
             map_col1, map_col2, map_col3 = st.columns(3)
             for i, field in enumerate(target_fields):
@@ -48,7 +49,7 @@ def show_data_import():
 
             mapped_preview = pd.DataFrame()
             for field, source in selected_mappings.items():
-                mapped_preview[field] = df[source] if source != '<skip>' and source in df.columns else None
+                mapped_preview[field] = df[source] if source != '(none)' and source in df.columns else None
             st.caption("Mapped preview")
             st.dataframe(mapped_preview.head(8), use_container_width=True)
             

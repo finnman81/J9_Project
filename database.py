@@ -227,14 +227,33 @@ def get_teacher_notes(student_id: int) -> pd.DataFrame:
 def upsert_student_goal(student_id: int, measure: str, baseline_score: float,
                         target_score: float, expected_weekly_growth: float,
                         start_date: str = None, target_date: str = None):
-    """Create/update a goal for a student and measure."""
+    """Create or update a goal for a student and measure.
+
+    If a goal already exists for the same student_id + measure, it is updated.
+    Otherwise a new row is inserted.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO student_goals
-        (student_id, measure, baseline_score, target_score, expected_weekly_growth, start_date, target_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (student_id, measure, baseline_score, target_score, expected_weekly_growth, start_date, target_date))
+    # Check if goal already exists for this student + measure
+    cursor.execute(
+        'SELECT goal_id FROM student_goals WHERE student_id = ? AND measure = ?',
+        (student_id, measure)
+    )
+    existing = cursor.fetchone()
+    if existing:
+        cursor.execute('''
+            UPDATE student_goals
+            SET baseline_score = ?, target_score = ?, expected_weekly_growth = ?,
+                start_date = ?, target_date = ?
+            WHERE student_id = ? AND measure = ?
+        ''', (baseline_score, target_score, expected_weekly_growth,
+              start_date, target_date, student_id, measure))
+    else:
+        cursor.execute('''
+            INSERT INTO student_goals
+            (student_id, measure, baseline_score, target_score, expected_weekly_growth, start_date, target_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (student_id, measure, baseline_score, target_score, expected_weekly_growth, start_date, target_date))
     conn.commit()
     conn.close()
 

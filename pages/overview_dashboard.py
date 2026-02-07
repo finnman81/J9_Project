@@ -4,6 +4,7 @@ Shows KPIs, graphs, and sortable student table
 """
 import streamlit as st
 import pandas as pd
+import numpy as np
 from database import get_all_students, get_db_connection
 from visualizations import (
     create_risk_distribution_chart,
@@ -488,18 +489,33 @@ def show_overview_dashboard():
             for sid, g in tmp.groupby('student_id'):
                 scores = g['overall_literacy_score'].dropna().tolist()
                 if len(scores) >= 3:
-                    flags=[]
-                    if scores[-1] < scores[-2] < scores[-3]: flags.append('2 consecutive drops')
-                    if abs(scores[-1]-scores[-3]) <= 1: flags.append('flatline across 3 windows')
-                    if np.std(scores[-3:]) >= 8: flags.append('high variance')
-                    if flags: warn_rows.append({'student': g.iloc[-1]['student_name'], 'flags': ', '.join(flags)})
+                    flags = []
+                    if scores[-1] < scores[-2] < scores[-3]:
+                        flags.append('2 consecutive drops')
+                    if abs(scores[-1] - scores[-3]) <= 1:
+                        flags.append('flatline across 3 windows')
+                    if np.std(scores[-3:]) >= 8:
+                        flags.append('high variance')
+                    if flags:
+                        warn_rows.append({'student': g.iloc[-1]['student_name'], 'flags': ', '.join(flags)})
                 gg = g.dropna(subset=['overall_literacy_score'])
                 if len(gg) >= 2:
-                    m,b=np.polyfit(gg['x'], gg['overall_literacy_score'],1); pred=m*4+b
-                    band=max(5, gg['overall_literacy_score'].std() if len(gg)>2 else 8)
-                    fc_rows.append({'student': gg.iloc[-1]['student_name'], 'estimated_eoy': round(pred,1), 'band': f"±{band:.1f}"})
-                    weakness = min({'reading':gg.iloc[-1].get('reading_component',100), 'phonics':gg.iloc[-1].get('phonics_component',100), 'sight_words':gg.iloc[-1].get('sight_words_component',100)}, key=lambda k: {'reading':gg.iloc[-1].get('reading_component',100), 'phonics':gg.iloc[-1].get('phonics_component',100), 'sight_words':gg.iloc[-1].get('sight_words_component',100)}[k] if pd.notna({'reading':gg.iloc[-1].get('reading_component',100), 'phonics':gg.iloc[-1].get('phonics_component',100), 'sight_words':gg.iloc[-1].get('sight_words_component',100)}[k]) else 100)
-                    grp_rows.append({'student': gg.iloc[-1]['student_name'], 'group': f"{gg.iloc[-1]['risk_level']} + {weakness}"})
+                    m, b = np.polyfit(gg['x'], gg['overall_literacy_score'], 1)
+                    pred = m * 4 + b
+                    band = max(5, gg['overall_literacy_score'].std() if len(gg) > 2 else 8)
+                    fc_rows.append({'student': gg.iloc[-1]['student_name'], 'estimated_eoy': round(pred, 1), 'band': f"±{band:.1f}"})
+
+                    # Identify weakest component for grouping
+                    latest_row = gg.iloc[-1]
+                    component_scores = {
+                        'reading': latest_row.get('reading_component', 100),
+                        'phonics': latest_row.get('phonics_component', 100),
+                        'sight_words': latest_row.get('sight_words_component', 100),
+                    }
+                    # Replace NaN with 100 (treat missing as non-weak)
+                    component_scores = {k: (v if pd.notna(v) else 100) for k, v in component_scores.items()}
+                    weakness = min(component_scores, key=component_scores.get)
+                    grp_rows.append({'student': latest_row['student_name'], 'group': f"{latest_row['risk_level']} + {weakness}"})
         st.markdown("**Early warning flags**")
         st.dataframe(pd.DataFrame(warn_rows), use_container_width=True, height=120)
         st.markdown("**Forecast + recommended groupings**")
@@ -521,10 +537,11 @@ def show_overview_dashboard():
     printable = df[['student_name','grade_level','class_name','teacher_name','overall_literacy_score','risk_level']].copy()
     st.download_button('Download Printable Grade/Class Report (CSV)', printable.to_csv(index=False), 'grade_class_report.csv', 'text/csv')
 
-    subgroup_cols = [c for c in ['SPED','ELL','FRL'] if c in students_df.columns]
+    all_students_df = get_all_students()
+    subgroup_cols = [c for c in ['SPED','ELL','FRL'] if c in all_students_df.columns]
     if subgroup_cols:
         st.markdown("### Equity lens (optional)")
-        subgroup_df = df.merge(students_df[['student_id'] + subgroup_cols], on='student_id', how='left')
+        subgroup_df = df.merge(all_students_df[['student_id'] + subgroup_cols], on='student_id', how='left')
         parts=[]
         for col in subgroup_cols:
             tmp = subgroup_df.groupby(col)['risk_level'].apply(lambda s: (s.isin(['High','Medium']).mean()*100)).reset_index(name='at_risk_pct')

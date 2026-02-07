@@ -265,6 +265,9 @@ def show_student_detail():
     # Current Status KPIs
     st.subheader("Current Status")
     
+    # Initialize interventions_df so it's available for timeline/export even without scores
+    interventions_df = pd.DataFrame()
+
     status_col1, status_col2, status_col3, status_col4, status_col5 = st.columns(5)
     
     if latest_score:
@@ -601,9 +604,8 @@ def show_student_detail():
         note_date = st.date_input('Note Date')
     with ncol3:
         note_text = st.text_input('Add Teacher Note')
-    if st.button('Save Note') and note_text.strip() and not student_records.empty:
-        for sid in student_records['student_id'].tolist():
-            add_teacher_note(sid, note_text.strip(), note_tag, note_date.strftime('%Y-%m-%d'))
+    if st.button('Save Note') and note_text.strip() and selected_student_id:
+        add_teacher_note(selected_student_id, note_text.strip(), note_tag, note_date.strftime('%Y-%m-%d'))
         st.success('Teacher note saved.')
         st.rerun()
     if 'all_notes' in locals() and not all_notes.empty:
@@ -624,9 +626,8 @@ def show_student_detail():
         goal_start = st.date_input('Goal Start')
     with gd2:
         goal_target = st.date_input('Goal Target Date')
-    if st.button('Save Goal') and not student_records.empty:
-        for sid in student_records['student_id'].tolist():
-            upsert_student_goal(sid, goal_measure, baseline, target, expected_growth, goal_start.strftime('%Y-%m-%d'), goal_target.strftime('%Y-%m-%d'))
+    if st.button('Save Goal') and selected_student_id:
+        upsert_student_goal(selected_student_id, goal_measure, baseline, target, expected_growth, goal_start.strftime('%Y-%m-%d'), goal_target.strftime('%Y-%m-%d'))
         st.success('Goal saved.')
         st.rerun()
 
@@ -648,19 +649,33 @@ def show_student_detail():
             trend_text = latest_score.get('trend', 'Unknown') if latest_score else 'Unknown'
             st.success(f"{student_name} currently has a literacy score of {score_text}, risk level {risk_text}, and trend {trend_text}. Instruction should continue targeting identified needs and progress checks should continue regularly.")
     with out2:
-        summary_lines = [
-            f"Intervention Plan Summary - {student_name}",
-            f"Latest score: {latest_score.get('overall_literacy_score') if latest_score else 'N/A'}",
-            f"Latest risk: {latest_score.get('risk_level') if latest_score else 'N/A'}",
-            "",
-            "Interventions:"
+        score_val = latest_score.get('overall_literacy_score') if latest_score else 'N/A'
+        risk_val = latest_score.get('risk_level') if latest_score else 'N/A'
+        html_parts = [
+            "<html><head><style>body{font-family:Arial,sans-serif;margin:2em;}h1{color:#333;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #ccc;padding:8px;text-align:left;}th{background:#f5f5f5;}</style></head><body>",
+            f"<h1>Intervention Plan Summary &mdash; {student_name}</h1>",
+            f"<p><strong>Latest Score:</strong> {score_val}</p>",
+            f"<p><strong>Risk Level:</strong> {risk_val}</p>",
+            "<h2>Interventions</h2>",
         ]
         if not interventions_df.empty:
+            html_parts.append("<table><tr><th>Type</th><th>Status</th><th>Start</th><th>End</th></tr>")
             for _, r in interventions_df.head(10).iterrows():
-                summary_lines.append(f"- {r.get('intervention_type')} ({r.get('status')}) {r.get('start_date')} to {r.get('end_date')}")
+                html_parts.append(
+                    f"<tr><td>{r.get('intervention_type','')}</td><td>{r.get('status','')}</td>"
+                    f"<td>{r.get('start_date','')}</td><td>{r.get('end_date','')}</td></tr>"
+                )
+            html_parts.append("</table>")
         else:
-            summary_lines.append('- None logged')
-        st.download_button('Intervention plan summary export (HTML/PDF-ready)', '<br/>'.join(summary_lines).encode('utf-8'), f"{student_name.lower().replace(' ','_')}_intervention_plan.html", 'text/html')
+            html_parts.append("<p>No interventions logged.</p>")
+        html_parts.append("</body></html>")
+        html_content = "\n".join(html_parts)
+        st.download_button(
+            'Intervention plan summary export (HTML/PDF-ready)',
+            html_content.encode('utf-8'),
+            f"{student_name.lower().replace(' ','_')}_intervention_plan.html",
+            'text/html'
+        )
 
     st.markdown("---")
     

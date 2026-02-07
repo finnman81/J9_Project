@@ -428,7 +428,9 @@ def show_single_entry_form():
                     assessment_date=assessment_date.strftime("%Y-%m-%d") if assessment_date else None,
                     notes=notes if notes else None,
                     concerns=concerns if concerns else None,
-                    entered_by=entered_by
+                    entered_by=entered_by,
+                    needs_review=needs_review,
+                    is_draft=save_as_draft
                 )
 
                 # Add intervention if specified
@@ -480,6 +482,12 @@ def show_bulk_entry_form():
     
 
     st.markdown("### Quick Bulk Grid (copy/paste)")
+    grid_school_year = st.selectbox(
+        "School Year for Grid Entries",
+        ["2024-25", "2023-24", "2025-26"],
+        index=0,
+        key="grid_school_year"
+    )
     if 'bulk_grid' not in st.session_state:
         st.session_state.bulk_grid = pd.DataFrame([{
             'Student_Name':'', 'Grade_Level':'', 'Class_Name':'', 'Teacher_Name':'',
@@ -493,16 +501,16 @@ def show_bulk_entry_form():
             try:
                 if str(row.get('Student_Name','')).strip() == '' or str(row.get('Grade_Level','')).strip() == '':
                     continue
-                sid = get_student_id(str(row.get('Student_Name')).strip(), str(row.get('Grade_Level')).strip(), '2024-25')
+                sid = get_student_id(str(row.get('Student_Name')).strip(), str(row.get('Grade_Level')).strip(), grid_school_year)
                 if not sid:
-                    sid = create_student(str(row.get('Student_Name')).strip(), str(row.get('Grade_Level')).strip(), str(row.get('Class_Name','')).strip() or None, str(row.get('Teacher_Name','')).strip() or None, '2024-25')
+                    sid = create_student(str(row.get('Student_Name')).strip(), str(row.get('Grade_Level')).strip(), str(row.get('Class_Name','')).strip() or None, str(row.get('Teacher_Name','')).strip() or None, grid_school_year)
                 raw_score = str(row.get('Score_Value','')).strip()
                 norm = process_assessment_score(str(row.get('Assessment_Type')).strip(), raw_score) if raw_score else None
                 add_assessment(
                     student_id=sid,
                     assessment_type=str(row.get('Assessment_Type')).strip(),
                     assessment_period=str(row.get('Assessment_Period')).strip(),
-                    school_year='2024-25',
+                    school_year=grid_school_year,
                     score_value=raw_score or None,
                     score_normalized=norm,
                     notes=str(row.get('Notes','')).strip() or None,
