@@ -109,7 +109,7 @@ def show_student_detail():
             s.class_name
         FROM literacy_scores ls
         JOIN students s ON ls.student_id = s.student_id
-        WHERE s.student_name = ?
+        WHERE s.student_name = %s
         ORDER BY
             s.school_year,
             s.grade_level,
@@ -212,12 +212,12 @@ def show_student_detail():
                     COUNT(DISTINCT s.student_id) as class_size
                 FROM literacy_scores ls
                 JOIN students s ON ls.student_id = s.student_id
-                WHERE s.class_name = ? AND s.school_year = ?
+                WHERE s.class_name = %s AND s.school_year = %s
                 AND ls.assessment_period = (
                     SELECT assessment_period 
                     FROM literacy_scores 
-                    WHERE student_id = s.student_id 
-                    ORDER BY calculated_at DESC 
+                    WHERE student_id = s.student_id
+                    ORDER BY calculated_at DESC
                     LIMIT 1
                 )
             '''
@@ -297,7 +297,7 @@ def show_student_detail():
             SELECT i.*, s.student_name, s.grade_level, s.school_year
             FROM interventions i
             JOIN students s ON i.student_id = s.student_id
-            WHERE s.student_name = ?
+            WHERE s.student_name = %s
             ORDER BY i.start_date DESC
         '''
         interventions_df = pd.read_sql_query(interventions_query, conn, params=[student_name])
@@ -340,7 +340,7 @@ def show_student_detail():
             s.class_name
         FROM assessments a
         JOIN students s ON a.student_id = s.student_id
-        WHERE s.student_name = ?
+        WHERE s.student_name = %s
         ORDER BY s.school_year, s.grade_level, a.assessment_date DESC,
             CASE a.assessment_period
                 WHEN 'Fall' THEN 1

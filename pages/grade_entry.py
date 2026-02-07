@@ -237,7 +237,7 @@ def show_single_entry_form():
     if student_id and score_normalized is not None:
         conn = get_db_connection()
         prev_df = pd.read_sql_query(
-            "SELECT score_normalized FROM assessments WHERE student_id = ? AND assessment_type = ? ORDER BY created_at DESC LIMIT 5",
+            "SELECT score_normalized FROM assessments WHERE student_id = %s AND assessment_type = %s ORDER BY created_at DESC LIMIT 5",
             conn, params=[student_id, assessment_type]
         )
         conn.close()
@@ -331,8 +331,8 @@ def show_single_entry_form():
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE students 
-                    SET class_name = ?, teacher_name = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE student_id = ?
+                    SET class_name = %s, teacher_name = %s, updated_at = NOW()
+                    WHERE student_id = %s
                 ''', (class_name if class_name else None, teacher_name if teacher_name else None, student_id))
                 conn.commit()
                 conn.close()
@@ -410,8 +410,8 @@ def show_single_entry_form():
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE students 
-                    SET class_name = ?, teacher_name = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE student_id = ?
+                    SET class_name = %s, teacher_name = %s, updated_at = NOW()
+                    WHERE student_id = %s
                 ''', (class_name if class_name else None, teacher_name if teacher_name else None, student_id))
                 conn.commit()
                 conn.close()

@@ -14,14 +14,14 @@ def recalculate_literacy_scores(student_id: int = None, school_year: str = None)
     
     # Get all students or specific student
     if student_id:
-        query = 'SELECT DISTINCT student_id, school_year FROM students WHERE student_id = ?'
+        query = 'SELECT DISTINCT student_id, school_year FROM students WHERE student_id = %s'
         params = [student_id]
     else:
         query = 'SELECT DISTINCT student_id, school_year FROM students'
         params = []
     
     if school_year:
-        query += ' AND school_year = ?'
+        query += ' AND school_year = %s'
         params.append(school_year)
     
     students_df = pd.read_sql_query(query, conn)

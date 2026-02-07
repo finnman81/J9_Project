@@ -65,28 +65,28 @@ def show_overview_dashboard():
     # Handle multi-select grades
     if selected_grades:
         if len(selected_grades) == 1:
-            conditions.append('s.grade_level = ?')
+            conditions.append('s.grade_level = %s')
             params.append(selected_grades[0])
         else:
-            placeholders = ','.join(['?'] * len(selected_grades))
+            placeholders = ','.join(['%s'] * len(selected_grades))
             conditions.append(f's.grade_level IN ({placeholders})')
             params.extend(selected_grades)
     elif selected_grade and selected_grade != 'All':
-        conditions.append('s.grade_level = ?')
+        conditions.append('s.grade_level = %s')
         params.append(selected_grade)
     
     if selected_class != 'All':
-        conditions.append('s.class_name = ?')
+        conditions.append('s.class_name = %s')
         params.append(selected_class)
     if selected_teacher != 'All':
-        conditions.append('s.teacher_name = ?')
+        conditions.append('s.teacher_name = %s')
         params.append(selected_teacher)
     
     where_clause = ' AND '.join(conditions) if conditions else '1=1'
     
     if selected_year != 'All':
         # Specific year: filter students and scores to that year, latest period per student
-        conditions.append('s.school_year = ?')
+        conditions.append('s.school_year = %s')
         params.append(selected_year)
         where_clause = ' AND '.join(conditions)
         query = f'''
@@ -169,7 +169,7 @@ def show_overview_dashboard():
             SELECT COUNT(DISTINCT i.student_id) as intervention_count
             FROM interventions i
             JOIN students s ON i.student_id = s.student_id
-            WHERE i.status = 'Active' AND s.school_year = ?
+            WHERE i.status = 'Active' AND s.school_year = %s
         '''
         intervention_df = pd.read_sql_query(intervention_query, conn, params=[selected_year])
     else:
@@ -194,7 +194,7 @@ def show_overview_dashboard():
     '''
     at_risk_params = []
     if selected_year != 'All':
-        at_risk_with_intervention_query += ' AND s.school_year = ?'
+        at_risk_with_intervention_query += ' AND s.school_year = %s'
         at_risk_params.append(selected_year)
 
     at_risk_with_intervention_query += ' AND i.student_id IS NOT NULL'
@@ -322,11 +322,11 @@ def show_overview_dashboard():
             
             if selected_grades:
                 if len(selected_grades) > 1:
-                    placeholders = ','.join(['?'] * len(selected_grades))
+                    placeholders = ','.join(['%s'] * len(selected_grades))
                     trend_conditions.append(f's.grade_level IN ({placeholders})')
                     trend_params.extend(selected_grades)
                 else:
-                    trend_conditions.append('s.grade_level = ?')
+                    trend_conditions.append('s.grade_level = %s')
                     trend_params.append(selected_grades[0])
             
             # Always show all years for this chart (ignore School Year filter)
@@ -387,11 +387,11 @@ def show_overview_dashboard():
                 
                 if selected_grades:
                     if len(selected_grades) > 1:
-                        placeholders = ','.join(['?'] * len(selected_grades))
+                        placeholders = ','.join(['%s'] * len(selected_grades))
                         int_conditions.append(f's.grade_level IN ({placeholders})')
                         int_params.extend(selected_grades)
                     else:
-                        int_conditions.append('s.grade_level = ?')
+                        int_conditions.append('s.grade_level = %s')
                         int_params.append(selected_grades[0])
                 
                 if int_conditions:
