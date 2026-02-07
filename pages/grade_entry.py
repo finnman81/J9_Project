@@ -15,6 +15,7 @@ from datetime import datetime
 
 def show_grade_entry():
     st.title("✏️ Grade Entry")
+    st.caption("Keyboard-first workflow: paste rows into the bulk grid and use tab/arrow keys to move quickly.")
     st.markdown("---")
     
     # Mode selection
@@ -227,8 +228,24 @@ def show_single_entry_form():
     
     notes = st.text_area("Notes/Observations", height=100)
     concerns = st.text_area("Concerns", height=100)
+    needs_review = st.checkbox("Flag as needs review")
+    save_as_draft = st.checkbox("Save draft (exclude from finalized reporting)")
     entered_by = st.text_input("Entered By", value="Teacher")
     
+
+    # Outlier detection against recent history
+    if student_id and score_normalized is not None:
+        conn = get_db_connection()
+        prev_df = pd.read_sql_query(
+            "SELECT score_normalized FROM assessments WHERE student_id = ? AND assessment_type = ? ORDER BY created_at DESC LIMIT 5",
+            conn, params=[student_id, assessment_type]
+        )
+        conn.close()
+        if not prev_df.empty and pd.notna(prev_df['score_normalized'].std()) and prev_df['score_normalized'].std() > 0:
+            zscore = (score_normalized - prev_df['score_normalized'].mean()) / prev_df['score_normalized'].std()
+            if abs(zscore) >= 2:
+                st.warning(f"This score appears to be an outlier vs prior scores (z={zscore:.2f}). Please confirm.")
+
     # Intervention Section
     st.markdown("### Intervention Entry (Optional)")
     
@@ -332,7 +349,9 @@ def show_single_entry_form():
                     assessment_date=assessment_date.strftime("%Y-%m-%d") if assessment_date else None,
                     notes=notes if notes else None,
                     concerns=concerns if concerns else None,
-                    entered_by=entered_by
+                    entered_by=entered_by,
+                    needs_review=needs_review,
+                    is_draft=save_as_draft
                 )
                 
                 # Add intervention if specified
@@ -459,6 +478,48 @@ def show_bulk_entry_form():
         mime="text/csv"
     )
     
+
+    st.markdown("### Quick Bulk Grid (copy/paste)")
+    if 'bulk_grid' not in st.session_state:
+        st.session_state.bulk_grid = pd.DataFrame([{
+            'Student_Name':'', 'Grade_Level':'', 'Class_Name':'', 'Teacher_Name':'',
+            'Assessment_Type':'Reading_Level', 'Assessment_Period':'Fall', 'Score_Value':'',
+            'Needs_Review':False, 'Save_Draft':False, 'Notes':'', 'Concerns':''
+        } for _ in range(8)])
+    st.session_state.bulk_grid = st.data_editor(st.session_state.bulk_grid, num_rows='dynamic', use_container_width=True)
+    if st.button('Save Grid Entries', use_container_width=True):
+        grid_saved, grid_errors = 0, 0
+        for _, row in st.session_state.bulk_grid.iterrows():
+            try:
+                if str(row.get('Student_Name','')).strip() == '' or str(row.get('Grade_Level','')).strip() == '':
+                    continue
+                sid = get_student_id(str(row.get('Student_Name')).strip(), str(row.get('Grade_Level')).strip(), '2024-25')
+                if not sid:
+                    sid = create_student(str(row.get('Student_Name')).strip(), str(row.get('Grade_Level')).strip(), str(row.get('Class_Name','')).strip() or None, str(row.get('Teacher_Name','')).strip() or None, '2024-25')
+                raw_score = str(row.get('Score_Value','')).strip()
+                norm = process_assessment_score(str(row.get('Assessment_Type')).strip(), raw_score) if raw_score else None
+                add_assessment(
+                    student_id=sid,
+                    assessment_type=str(row.get('Assessment_Type')).strip(),
+                    assessment_period=str(row.get('Assessment_Period')).strip(),
+                    school_year='2024-25',
+                    score_value=raw_score or None,
+                    score_normalized=norm,
+                    notes=str(row.get('Notes','')).strip() or None,
+                    concerns=str(row.get('Concerns','')).strip() or None,
+                    entered_by='Teacher',
+                    needs_review=bool(row.get('Needs_Review', False)),
+                    is_draft=bool(row.get('Save_Draft', False))
+                )
+                grid_saved += 1
+            except Exception:
+                grid_errors += 1
+        if grid_saved:
+            recalculate_literacy_scores()
+        st.success(f'Grid saved: {grid_saved} entries')
+        if grid_errors:
+            st.warning(f'Grid errors: {grid_errors}')
+
     st.markdown("---")
     
     # File upload
@@ -562,7 +623,9 @@ def show_bulk_entry_form():
                                     assessment_date=None,
                                     notes=notes,
                                     concerns=concerns,
-                                    entered_by=default_entered_by
+                                    entered_by=default_entered_by,
+                                    needs_review=bool(row.get("Needs_Review", False)),
+                                    is_draft=bool(row.get("Save_Draft", False))
                                 )
                                 saved_count += 1
                             else:

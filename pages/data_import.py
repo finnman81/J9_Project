@@ -35,6 +35,22 @@ def show_data_import():
             # Show preview
             st.subheader("Data Preview")
             st.dataframe(df.head(10), use_container_width=True)
+
+            # Enhancement: Mapping wizard
+            st.subheader("Mapping Wizard")
+            target_fields = ['Student_Name','Grade_Level','Concerns']
+            mapping_cols = ['<skip>'] + list(df.columns)
+            selected_mappings = {}
+            map_col1, map_col2, map_col3 = st.columns(3)
+            for i, field in enumerate(target_fields):
+                with [map_col1, map_col2, map_col3][i % 3]:
+                    selected_mappings[field] = st.selectbox(f"{field} ←", mapping_cols, index=(mapping_cols.index(field) if field in mapping_cols else 0), key=f"import_map_{field}")
+
+            mapped_preview = pd.DataFrame()
+            for field, source in selected_mappings.items():
+                mapped_preview[field] = df[source] if source != '<skip>' and source in df.columns else None
+            st.caption("Mapped preview")
+            st.dataframe(mapped_preview.head(8), use_container_width=True)
             
             # School year selection
             school_year = st.selectbox(
@@ -67,6 +83,25 @@ def show_data_import():
                 'PAR_EOY': ('Benchmark', 'EOY'),
             }
             
+            # Enhancement: Duplicate detection (same student + same measure + same date if date column exists)
+            potential_duplicate_rows = pd.DataFrame()
+            if {"Student_Name", "Assessment_Date"}.issubset(set(df.columns)):
+                measure_cols = [c for c in df.columns if c not in ["Student_Name", "Grade_Level", "Concerns"] and not c.endswith("_Original")]
+                long_parts = []
+                for mc in measure_cols:
+                    part = df[["Student_Name", "Assessment_Date", mc]].copy()
+                    part = part.rename(columns={mc: "Score_Value"})
+                    part["Measure"] = mc
+                    long_parts.append(part)
+                if long_parts:
+                    long_df = pd.concat(long_parts, ignore_index=True)
+                    long_df = long_df[long_df["Score_Value"].notna()]
+                    dup_mask = long_df.duplicated(subset=["Student_Name", "Measure", "Assessment_Date"], keep=False)
+                    potential_duplicate_rows = long_df[dup_mask]
+            if not potential_duplicate_rows.empty:
+                st.warning(f"Detected {len(potential_duplicate_rows)} potential duplicate assessment entries in file.")
+                st.dataframe(potential_duplicate_rows.head(20), use_container_width=True)
+
             # Import button
             if st.button("Import All Data", type="primary", use_container_width=True):
                 progress_bar = st.progress(0)
@@ -187,6 +222,9 @@ def show_data_import():
                 - Students created: {len(students_created)}
                 - Assessments added: {assessments_added}
                 """)
+                st.subheader("Import Quality Report")
+                st.write(f"Rows imported: {assessments_added}")
+                st.write(f"Rows skipped: {len(errors)}")
                 
                 if errors:
                     st.warning(f"⚠️ {len(errors)} errors occurred:")
