@@ -138,7 +138,7 @@ def show_overview_dashboard():
             WHERE {where_clause}
               AND s.school_year = (
                   SELECT MAX(s2.school_year) FROM students s2
-                  WHERE s2.student_id = s.student_id
+                  WHERE s2.student_name = s.student_name
               )
             ORDER BY s.student_name, s.grade_level
         '''

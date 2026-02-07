@@ -358,7 +358,7 @@ def show_single_entry_form():
     
     with col2:
         if st.button("Save and Add Another", use_container_width=True):
-            if student_option == "Create New Student" and not student_id:
+            if student_option == "Create New Student":
                 if not student_name or not grade_level:
                     st.error("Please fill in required fields: Student Name and Grade Level")
                 else:
@@ -369,16 +369,36 @@ def show_single_entry_form():
                         teacher_name=teacher_name if teacher_name else None,
                         school_year=school_year_display
                     )
+                    st.success(f"Created student: {student_name}")
+
+            # If selecting existing student but record doesn't exist yet
             elif student_option == "Select Existing Student" and not student_id:
-                student_id = create_student(
-                    student_name=student_name,
-                    grade_level=grade_level,
-                    class_name=class_name if class_name else None,
-                    teacher_name=teacher_name if teacher_name else None,
-                    school_year=school_year_display
-                )
+                if not student_name or not grade_level:
+                    st.error("Please select student and grade level")
+                else:
+                    student_id = create_student(
+                        student_name=student_name,
+                        grade_level=grade_level,
+                        class_name=class_name if class_name else None,
+                        teacher_name=teacher_name if teacher_name else None,
+                        school_year=school_year_display
+                    )
+                    st.success(f"Created record for {student_name} - {grade_level}")
+
+            # Update class/teacher if changed
+            if student_id and student_option == "Select Existing Student":
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE students 
+                    SET class_name = ?, teacher_name = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE student_id = ?
+                ''', (class_name if class_name else None, teacher_name if teacher_name else None, student_id))
+                conn.commit()
+                conn.close()
 
             if student_id:
+                # Add assessment
                 add_assessment(
                     student_id=student_id,
                     assessment_type=assessment_type,
@@ -392,6 +412,7 @@ def show_single_entry_form():
                     entered_by=entered_by
                 )
 
+                # Add intervention if specified
                 if add_intervention_entry and intervention_type:
                     add_intervention(
                         student_id=student_id,
@@ -404,8 +425,9 @@ def show_single_entry_form():
                         notes=intervention_notes
                     )
 
+                # Recalculate literacy scores
                 recalculate_literacy_scores(student_id=student_id)
-                st.success("Assessment saved. Enter another one below.")
+                st.success("Assessment saved successfully! Enter another one below.")
             else:
                 st.error("Please select or create a student first")
 

@@ -42,8 +42,8 @@ def show_student_detail():
     selected_student_row = students_df[students_df['student_id'] == selected_student_id].iloc[0]
     student_name = selected_student_row['student_name']
 
-    # Get all records for this selected student identity
-    student_records = students_df[students_df['student_id'] == selected_student_id]
+    # Get all records for this student across all grades/years (by name for multi-year view)
+    student_records = students_df[students_df['student_name'] == student_name]
     
     # Student Info Card
     st.subheader("Student Information")
@@ -108,8 +108,10 @@ def show_student_detail():
             s.class_name
         FROM literacy_scores ls
         JOIN students s ON ls.student_id = s.student_id
-        WHERE s.student_id = ?
+        WHERE s.student_name = ?
         ORDER BY
+            s.school_year,
+            s.grade_level,
             CASE ls.assessment_period
                 WHEN 'Fall' THEN 1
                 WHEN 'Winter' THEN 2
@@ -119,7 +121,7 @@ def show_student_detail():
             END,
             ls.calculated_at
     '''
-    all_scores_df = pd.read_sql_query(all_scores_query, conn, params=[selected_student_id])
+    all_scores_df = pd.read_sql_query(all_scores_query, conn, params=[student_name])
     conn.close()
     
     # Clean DataFrame: drop duplicates and reset index
@@ -291,10 +293,10 @@ def show_student_detail():
             SELECT i.*, s.student_name, s.grade_level, s.school_year
             FROM interventions i
             JOIN students s ON i.student_id = s.student_id
-            WHERE s.student_id = ?
+            WHERE s.student_name = ?
             ORDER BY i.start_date DESC
         '''
-        interventions_df = pd.read_sql_query(interventions_query, conn, params=[selected_student_id])
+        interventions_df = pd.read_sql_query(interventions_query, conn, params=[student_name])
         conn.close()
         
         # Clean DataFrame: drop duplicates and reset index
@@ -334,7 +336,7 @@ def show_student_detail():
             s.class_name
         FROM assessments a
         JOIN students s ON a.student_id = s.student_id
-        WHERE s.student_id = ?
+        WHERE s.student_name = ?
         ORDER BY s.school_year, s.grade_level, a.assessment_date DESC,
             CASE a.assessment_period
                 WHEN 'Fall' THEN 1
@@ -344,7 +346,7 @@ def show_student_detail():
                 ELSE 0
             END
     '''
-    assessments_df = pd.read_sql_query(all_assessments_query, conn, params=[selected_student_id])
+    assessments_df = pd.read_sql_query(all_assessments_query, conn, params=[student_name])
     conn.close()
     
     # Clean DataFrame: drop duplicates and reset index
