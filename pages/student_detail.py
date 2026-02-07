@@ -6,7 +6,8 @@ import streamlit as st
 import pandas as pd
 from database import (
     get_all_students, get_student_assessments, get_student_interventions,
-    get_latest_literacy_score, get_db_connection
+    get_latest_literacy_score, get_db_connection, add_teacher_note, get_teacher_notes,
+    upsert_student_goal, get_student_goals
 )
 import pandas as pd
 from visualizations import (
@@ -538,6 +539,106 @@ def show_student_detail():
     else:
         st.info("No assessment data available for this student.")
     
+    # Enhancement: Unified timeline, notes, goals, and export summaries
+    st.subheader("Timeline View")
+    timeline_rows = []
+    if not assessments_df.empty:
+        for _, r in assessments_df.iterrows():
+            timeline_rows.append({'date': r.get('assessment_date'), 'event': f"Assessment: {r.get('assessment_type')} ({r.get('assessment_period')})", 'details': f"Score={r.get('score_normalized')}"})
+    if not interventions_df.empty:
+        for _, r in interventions_df.iterrows():
+            timeline_rows.append({'date': r.get('start_date'), 'event': f"Intervention Start: {r.get('intervention_type')}", 'details': r.get('status')})
+            if pd.notna(r.get('end_date')):
+                timeline_rows.append({'date': r.get('end_date'), 'event': f"Intervention End: {r.get('intervention_type')}", 'details': r.get('status')})
+    if student_records is not None and not student_records.empty:
+        note_frames = [get_teacher_notes(sid) for sid in student_records['student_id'].tolist()]
+        note_frames = [n for n in note_frames if not n.empty]
+        if note_frames:
+            all_notes = pd.concat(note_frames, ignore_index=True)
+            for _, r in all_notes.iterrows():
+                timeline_rows.append({'date': r.get('note_date') or r.get('created_at'), 'event': f"Note ({r.get('tag') or 'General'})", 'details': r.get('note_text')})
+        else:
+            all_notes = pd.DataFrame()
+    else:
+        all_notes = pd.DataFrame()
+
+    if timeline_rows:
+        timeline_df = pd.DataFrame(timeline_rows)
+        timeline_df['date'] = pd.to_datetime(timeline_df['date'], errors='coerce')
+        timeline_df = timeline_df.sort_values('date', ascending=False)
+        st.dataframe(timeline_df, use_container_width=True, height=240)
+    else:
+        st.info("No timeline events available.")
+
+    st.subheader("Teacher Notes")
+    ncol1, ncol2, ncol3 = st.columns([1,1,2])
+    with ncol1:
+        note_tag = st.selectbox('Tag', ['Attendance','Behavior','Comprehension','Decoding','Home Reading','Other'])
+    with ncol2:
+        note_date = st.date_input('Note Date')
+    with ncol3:
+        note_text = st.text_input('Add Teacher Note')
+    if st.button('Save Note') and note_text.strip() and not student_records.empty:
+        for sid in student_records['student_id'].tolist():
+            add_teacher_note(sid, note_text.strip(), note_tag, note_date.strftime('%Y-%m-%d'))
+        st.success('Teacher note saved.')
+        st.rerun()
+    if 'all_notes' in locals() and not all_notes.empty:
+        st.dataframe(all_notes[['note_date','tag','note_text','created_by']], use_container_width=True, height=160)
+
+    st.subheader("Goal Tracking")
+    gcol1, gcol2, gcol3, gcol4 = st.columns(4)
+    with gcol1:
+        goal_measure = st.selectbox('Measure', ['overall_literacy_score','reading_component','phonics_component','sight_words_component'])
+    with gcol2:
+        baseline = st.number_input('Baseline', min_value=0.0, max_value=100.0, step=0.1)
+    with gcol3:
+        target = st.number_input('Target', min_value=0.0, max_value=100.0, step=0.1, value=70.0)
+    with gcol4:
+        expected_growth = st.number_input('Expected Weekly Growth', min_value=0.0, step=0.1, value=0.8)
+    gd1, gd2 = st.columns(2)
+    with gd1:
+        goal_start = st.date_input('Goal Start')
+    with gd2:
+        goal_target = st.date_input('Goal Target Date')
+    if st.button('Save Goal') and not student_records.empty:
+        for sid in student_records['student_id'].tolist():
+            upsert_student_goal(sid, goal_measure, baseline, target, expected_growth, goal_start.strftime('%Y-%m-%d'), goal_target.strftime('%Y-%m-%d'))
+        st.success('Goal saved.')
+        st.rerun()
+
+    if not student_records.empty:
+        goal_frames = [get_student_goals(sid) for sid in student_records['student_id'].tolist()]
+        goal_frames = [g for g in goal_frames if not g.empty]
+        if goal_frames:
+            goals_df = pd.concat(goal_frames, ignore_index=True)
+            latest_val = latest_score.get(goal_measure) if latest_score and goal_measure in latest_score else None
+            goals_df['actual_growth'] = (latest_val - goals_df['baseline_score']) if latest_val is not None else None
+            st.dataframe(goals_df[['measure','baseline_score','target_score','expected_weekly_growth','actual_growth','start_date','target_date']], use_container_width=True, height=180)
+
+    st.subheader("Teacher Outputs")
+    out1, out2 = st.columns(2)
+    with out1:
+        if st.button('Parent-ready summary'):
+            score_text = f"{latest_score.get('overall_literacy_score', 'N/A'):.1f}" if latest_score and latest_score.get('overall_literacy_score') is not None else 'N/A'
+            risk_text = latest_score.get('risk_level', 'Unknown') if latest_score else 'Unknown'
+            trend_text = latest_score.get('trend', 'Unknown') if latest_score else 'Unknown'
+            st.success(f"{student_name} currently has a literacy score of {score_text}, risk level {risk_text}, and trend {trend_text}. Instruction should continue targeting identified needs and progress checks should continue regularly.")
+    with out2:
+        summary_lines = [
+            f"Intervention Plan Summary - {student_name}",
+            f"Latest score: {latest_score.get('overall_literacy_score') if latest_score else 'N/A'}",
+            f"Latest risk: {latest_score.get('risk_level') if latest_score else 'N/A'}",
+            "",
+            "Interventions:"
+        ]
+        if not interventions_df.empty:
+            for _, r in interventions_df.head(10).iterrows():
+                summary_lines.append(f"- {r.get('intervention_type')} ({r.get('status')}) {r.get('start_date')} to {r.get('end_date')}")
+        else:
+            summary_lines.append('- None logged')
+        st.download_button('Intervention plan summary export (HTML/PDF-ready)', '<br/>'.join(summary_lines).encode('utf-8'), f"{student_name.lower().replace(' ','_')}_intervention_plan.html", 'text/html')
+
     st.markdown("---")
     
     # Assessment History Table

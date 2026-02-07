@@ -396,6 +396,109 @@ def show_overview_dashboard():
         else:
             st.info("No trend data available")
     
+
+    # Enhancement additions (keeps original dashboard and extends it)
+    st.subheader("Data Freshness & Completeness")
+    fresh_col1, fresh_col2 = st.columns(2)
+    latest_update = pd.to_datetime(df['calculated_at'], errors='coerce').max() if not df.empty else None
+    with fresh_col1:
+        st.metric("Last Updated", latest_update.strftime('%Y-%m-%d %H:%M') if pd.notna(latest_update) else "N/A")
+        st.metric("% Students w/ Latest Assessment", f"{completion_rate:.1f}%")
+    with fresh_col2:
+        conn = get_db_connection()
+        missing_q = "SELECT s.grade_level, COALESCE(s.class_name,'Unassigned') as class_name, COUNT(DISTINCT s.student_id) as missing_entries FROM students s LEFT JOIN literacy_scores ls ON ls.student_id=s.student_id AND ls.school_year=s.school_year WHERE " + where_clause + " AND ls.score_id IS NULL GROUP BY s.grade_level, s.class_name ORDER BY s.grade_level, s.class_name"
+        missing_df = pd.read_sql_query(missing_q, conn, params=params)
+        conn.close()
+        st.write("Missing entries by grade/class")
+        st.dataframe(missing_df if not missing_df.empty else pd.DataFrame({'status':['No missing entries']}), use_container_width=True, height=140)
+
+    st.subheader("Teacher & Admin Insights")
+    conn = get_db_connection()
+    history_q = "SELECT s.student_id, s.student_name, s.school_year, ls.assessment_period, ls.risk_level, ls.overall_literacy_score, ls.reading_component, ls.phonics_component, ls.sight_words_component, ls.calculated_at FROM students s JOIN literacy_scores ls ON ls.student_id=s.student_id AND ls.school_year=s.school_year WHERE " + where_clause
+    hist_df = pd.read_sql_query(history_q, conn, params=params)
+    measure_q = "SELECT s.student_id, a.assessment_type, a.score_normalized FROM students s JOIN assessments a ON a.student_id=s.student_id WHERE " + where_clause
+    measure_df = pd.read_sql_query(measure_q, conn, params=params)
+    interv_q = "SELECT s.student_id, i.intervention_type, i.status FROM students s LEFT JOIN interventions i ON i.student_id=s.student_id WHERE " + where_clause
+    i_df = pd.read_sql_query(interv_q, conn, params=params)
+    conn.close()
+
+    ins_col1, ins_col2 = st.columns(2)
+    with ins_col1:
+        moves = {'Green→Yellow': 0, 'Yellow→Red': 0, 'Green→Red': 0}
+        if not hist_df.empty:
+            order = {'Fall':1,'Winter':2,'Spring':3,'EOY':4}
+            tmp = hist_df.copy()
+            tmp['period_order'] = tmp['assessment_period'].map(order).fillna(0)
+            tmp = tmp.sort_values(['student_id','school_year','period_order','calculated_at'])
+            for _, g in tmp.groupby(['student_id','school_year']):
+                if len(g) >= 2:
+                    prev, curr = g.iloc[-2]['risk_level'], g.iloc[-1]['risk_level']
+                    t = f"{'Green' if prev=='Low' else 'Yellow' if prev=='Medium' else 'Red'}→{'Green' if curr=='Low' else 'Yellow' if curr=='Medium' else 'Red'}"
+                    if t in moves:
+                        moves[t] += 1
+        st.markdown("**Cohort movement since last window**")
+        st.dataframe(pd.DataFrame([moves]), use_container_width=True, height=100)
+        st.markdown("**Risk distribution by measure**")
+        at_risk_ids = df[df['risk_level'].isin(['High','Medium'])]['student_id'].unique().tolist()
+        risk_measure = measure_df[measure_df['student_id'].isin(at_risk_ids)] if at_risk_ids else pd.DataFrame()
+        if not risk_measure.empty:
+            rm = risk_measure.groupby('assessment_type', as_index=False)['score_normalized'].mean().sort_values('score_normalized')
+            st.bar_chart(rm.set_index('assessment_type'))
+    with ins_col2:
+        warn_rows = []
+        fc_rows = []
+        grp_rows = []
+        if not hist_df.empty:
+            order = {'Fall':1,'Winter':2,'Spring':3,'EOY':4}
+            tmp = hist_df.copy(); tmp['x'] = tmp['assessment_period'].map(order).fillna(0)
+            tmp = tmp.sort_values(['student_id','school_year','x'])
+            for sid, g in tmp.groupby('student_id'):
+                scores = g['overall_literacy_score'].dropna().tolist()
+                if len(scores) >= 3:
+                    flags=[]
+                    if scores[-1] < scores[-2] < scores[-3]: flags.append('2 consecutive drops')
+                    if abs(scores[-1]-scores[-3]) <= 1: flags.append('flatline across 3 windows')
+                    if np.std(scores[-3:]) >= 8: flags.append('high variance')
+                    if flags: warn_rows.append({'student': g.iloc[-1]['student_name'], 'flags': ', '.join(flags)})
+                gg = g.dropna(subset=['overall_literacy_score'])
+                if len(gg) >= 2:
+                    m,b=np.polyfit(gg['x'], gg['overall_literacy_score'],1); pred=m*4+b
+                    band=max(5, gg['overall_literacy_score'].std() if len(gg)>2 else 8)
+                    fc_rows.append({'student': gg.iloc[-1]['student_name'], 'estimated_eoy': round(pred,1), 'band': f"±{band:.1f}"})
+                    weakness = min({'reading':gg.iloc[-1].get('reading_component',100), 'phonics':gg.iloc[-1].get('phonics_component',100), 'sight_words':gg.iloc[-1].get('sight_words_component',100)}, key=lambda k: {'reading':gg.iloc[-1].get('reading_component',100), 'phonics':gg.iloc[-1].get('phonics_component',100), 'sight_words':gg.iloc[-1].get('sight_words_component',100)}[k] if pd.notna({'reading':gg.iloc[-1].get('reading_component',100), 'phonics':gg.iloc[-1].get('phonics_component',100), 'sight_words':gg.iloc[-1].get('sight_words_component',100)}[k]) else 100)
+                    grp_rows.append({'student': gg.iloc[-1]['student_name'], 'group': f"{gg.iloc[-1]['risk_level']} + {weakness}"})
+        st.markdown("**Early warning flags**")
+        st.dataframe(pd.DataFrame(warn_rows), use_container_width=True, height=120)
+        st.markdown("**Forecast + recommended groupings**")
+        st.dataframe(pd.DataFrame(fc_rows).head(8), use_container_width=True, height=100)
+        st.dataframe(pd.DataFrame(grp_rows).head(8), use_container_width=True, height=100)
+
+    st.subheader("Admin Views")
+    admin_col1, admin_col2 = st.columns(2)
+    with admin_col1:
+        if not i_df.empty:
+            merged = i_df.merge(df[['student_id','trend']], on='student_id', how='left')
+            eff = merged.groupby('intervention_type', as_index=False).agg(sample_size=('student_id','nunique'), responders=('trend', lambda s: (s=='Improving').mean()*100))
+            eff['avg_growth_rate'] = eff['responders']/20
+            st.dataframe(eff, use_container_width=True, height=160)
+    with admin_col2:
+        tiers = df['risk_level'].map({'Low':'Tier 1','Medium':'Tier 2','High':'Tier 3'}).fillna('Unknown').value_counts().rename_axis('tier').reset_index(name='count')
+        st.dataframe(tiers, use_container_width=True, height=160)
+
+    printable = df[['student_name','grade_level','class_name','teacher_name','overall_literacy_score','risk_level']].copy()
+    st.download_button('Download Printable Grade/Class Report (CSV)', printable.to_csv(index=False), 'grade_class_report.csv', 'text/csv')
+
+    subgroup_cols = [c for c in ['SPED','ELL','FRL'] if c in students_df.columns]
+    if subgroup_cols:
+        st.markdown("### Equity lens (optional)")
+        subgroup_df = df.merge(students_df[['student_id'] + subgroup_cols], on='student_id', how='left')
+        parts=[]
+        for col in subgroup_cols:
+            tmp = subgroup_df.groupby(col)['risk_level'].apply(lambda s: (s.isin(['High','Medium']).mean()*100)).reset_index(name='at_risk_pct')
+            tmp['subgroup'] = col
+            parts.append(tmp)
+        st.dataframe(pd.concat(parts, ignore_index=True), use_container_width=True)
+
     st.markdown("---")
     
     # Student Table Section

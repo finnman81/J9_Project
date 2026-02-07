@@ -9,6 +9,14 @@ import os
 
 DB_PATH = 'database/literacy_assessments.db'
 
+
+def _ensure_column(cursor, table_name: str, column_name: str, column_def: str):
+    """Add a column if it does not yet exist."""
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+    if column_name not in existing_columns:
+        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_def}")
+
 def get_db_connection():
     """Get SQLite database connection"""
     # Ensure database directory exists
@@ -51,11 +59,17 @@ def init_database():
             notes TEXT,
             concerns TEXT,
             entered_by TEXT,
+            needs_review INTEGER DEFAULT 0,
+            is_draft INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (student_id) REFERENCES students(student_id),
             UNIQUE(student_id, assessment_type, assessment_period, school_year)
         )
     ''')
+
+    # Backwards-compatible schema updates for existing databases
+    _ensure_column(cursor, 'assessments', 'needs_review', 'INTEGER DEFAULT 0')
+    _ensure_column(cursor, 'assessments', 'is_draft', 'INTEGER DEFAULT 0')
     
     # Interventions table
     cursor.execute('''
@@ -92,6 +106,34 @@ def init_database():
             calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (student_id) REFERENCES students(student_id),
             UNIQUE(student_id, school_year, assessment_period)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS teacher_notes (
+            note_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            note_text TEXT NOT NULL,
+            tag TEXT,
+            note_date DATE,
+            created_by TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (student_id) REFERENCES students(student_id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS student_goals (
+            goal_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            measure TEXT NOT NULL,
+            baseline_score REAL,
+            target_score REAL,
+            expected_weekly_growth REAL,
+            start_date DATE,
+            target_date DATE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (student_id) REFERENCES students(student_id)
         )
     ''')
     
@@ -141,19 +183,72 @@ def create_student(student_name: str, grade_level: str, class_name: str = None,
 def add_assessment(student_id: int, assessment_type: str, assessment_period: str,
                    school_year: str, score_value: str = None, score_normalized: float = None,
                    assessment_date: str = None, notes: str = None, concerns: str = None,
-                   entered_by: str = None):
+                   entered_by: str = None, needs_review: bool = False, is_draft: bool = False):
     """Add an assessment record"""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         INSERT OR REPLACE INTO assessments
         (student_id, assessment_type, assessment_period, school_year, score_value,
-         score_normalized, assessment_date, notes, concerns, entered_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         score_normalized, assessment_date, notes, concerns, entered_by, needs_review, is_draft)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (student_id, assessment_type, assessment_period, school_year, score_value,
-          score_normalized, assessment_date, notes, concerns, entered_by))
+          score_normalized, assessment_date, notes, concerns, entered_by, int(needs_review), int(is_draft)))
     conn.commit()
     conn.close()
+
+
+def add_teacher_note(student_id: int, note_text: str, tag: str = None,
+                     note_date: str = None, created_by: str = 'Teacher'):
+    """Add a teacher note with optional tag/date."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO teacher_notes
+        (student_id, note_text, tag, note_date, created_by)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (student_id, note_text, tag, note_date, created_by))
+    conn.commit()
+    conn.close()
+
+
+def get_teacher_notes(student_id: int) -> pd.DataFrame:
+    """Get teacher notes for a student."""
+    conn = get_db_connection()
+    df = pd.read_sql_query('''
+        SELECT * FROM teacher_notes
+        WHERE student_id = ?
+        ORDER BY COALESCE(note_date, created_at) DESC
+    ''', conn, params=[student_id])
+    conn.close()
+    return df
+
+
+def upsert_student_goal(student_id: int, measure: str, baseline_score: float,
+                        target_score: float, expected_weekly_growth: float,
+                        start_date: str = None, target_date: str = None):
+    """Create/update a goal for a student and measure."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO student_goals
+        (student_id, measure, baseline_score, target_score, expected_weekly_growth, start_date, target_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (student_id, measure, baseline_score, target_score, expected_weekly_growth, start_date, target_date))
+    conn.commit()
+    conn.close()
+
+
+def get_student_goals(student_id: int) -> pd.DataFrame:
+    """Get all goals for a student."""
+    conn = get_db_connection()
+    df = pd.read_sql_query('''
+        SELECT * FROM student_goals
+        WHERE student_id = ?
+        ORDER BY created_at DESC
+    ''', conn, params=[student_id])
+    conn.close()
+    return df
 
 def add_intervention(student_id: int, intervention_type: str, start_date: str,
                      end_date: str = None, frequency: str = None, duration_minutes: int = None,
