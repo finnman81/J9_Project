@@ -14,6 +14,13 @@ from visualizations import (
     create_component_breakdown
 )
 from calculations import calculate_component_scores, calculate_overall_literacy_score, calculate_trend
+from benchmarks import (
+    get_benchmark_status, get_benchmark_thresholds, get_support_level,
+    classify_growth, growth_color, benchmark_color, benchmark_emoji,
+    compute_aimline, pm_trend_status, pm_status_color,
+    generate_parent_report_html, ACADIENCE_MEASURES, MEASURE_LABELS,
+    MEASURES_BY_GRADE, GRADE_ALIASES, PERIOD_MAP,
+)
 
 def show_student_detail():
     st.title("👤 Student Detail")
@@ -265,8 +272,9 @@ def show_student_detail():
     # Current Status KPIs
     st.subheader("Current Status")
     
-    # Initialize interventions_df so it's available for timeline/export even without scores
+    # Initialize variables so they're available for timeline/export even without scores
     interventions_df = pd.DataFrame()
+    bm_status = None
 
     status_col1, status_col2, status_col3, status_col4, status_col5 = st.columns(5)
     
@@ -288,8 +296,22 @@ def show_student_detail():
             st.metric("Trend", f"{trend_icon} {trend}")
         
         with status_col4:
-            benchmark_status = "Above" if overall_score >= 70 else ("At" if overall_score >= 50 else "Below")
-            st.metric("Benchmark Status", benchmark_status)
+            # Acadience-aligned benchmark status using internal score thresholds
+            current_grade = latest_score.get('grade_level', '')
+            current_period = latest_score.get('assessment_period', '')
+            bm_status = get_benchmark_status('Composite', current_grade, current_period, overall_score)
+            if bm_status is None:
+                # Fallback to internal thresholds
+                if overall_score >= 70:
+                    bm_status = 'At Benchmark'
+                elif overall_score >= 50:
+                    bm_status = 'Below Benchmark'
+                else:
+                    bm_status = 'Well Below Benchmark'
+            bm_icon = benchmark_emoji(bm_status)
+            st.metric("Benchmark Status", f"{bm_icon} {bm_status}")
+            support_level = get_support_level(bm_status)
+            st.caption(f"Support: {support_level}")
         
         # Get active interventions (using student_name query)
         conn = get_db_connection()
@@ -371,10 +393,23 @@ def show_student_detail():
             chart_col1, chart_col2 = st.columns(2)
             
             with chart_col1:
-                # Enhanced progress chart showing all grades/years
+                # Enhanced progress chart with aimline and benchmark zones
                 import plotly.graph_objects as go
-                
+
                 fig = go.Figure()
+
+                # Add benchmark zone shading (green/yellow/red)
+                fig.add_hrect(y0=70, y1=100, fillcolor="#28a745", opacity=0.07,
+                              line_width=0, annotation_text="At/Above Benchmark",
+                              annotation_position="top right")
+                fig.add_hrect(y0=50, y1=70, fillcolor="#ffc107", opacity=0.07,
+                              line_width=0, annotation_text="Below Benchmark",
+                              annotation_position="top right")
+                fig.add_hrect(y0=0, y1=50, fillcolor="#dc3545", opacity=0.07,
+                              line_width=0, annotation_text="Well Below",
+                              annotation_position="top right")
+
+                # Actual scores
                 fig.add_trace(go.Scatter(
                     x=scores_df['period_label'],
                     y=scores_df['overall_literacy_score'],
@@ -383,20 +418,53 @@ def show_student_detail():
                     line=dict(color='#007bff', width=3),
                     marker=dict(size=12)
                 ))
-                
-                # Add benchmark line
-                fig.add_hline(y=70, line_dash="dash", line_color="green", 
-                              annotation_text="Benchmark (70)", annotation_position="right")
-                
+
+                # Add aimline if student has a goal
+                goal_frames = []
+                if not student_records.empty:
+                    for sid in student_records['student_id'].tolist():
+                        gf = get_student_goals(sid)
+                        if not gf.empty:
+                            goal_frames.append(gf)
+                if goal_frames:
+                    all_goals = pd.concat(goal_frames, ignore_index=True)
+                    lit_goals = all_goals[all_goals['measure'] == 'overall_literacy_score']
+                    if not lit_goals.empty:
+                        goal_row = lit_goals.iloc[0]
+                        base = goal_row['baseline_score']
+                        tgt = goal_row['target_score']
+                        n_pts = len(scores_df)
+                        if n_pts >= 2 and base is not None and tgt is not None:
+                            aimline_vals = compute_aimline(base, tgt, 0, n_pts - 1, n_pts)
+                            fig.add_trace(go.Scatter(
+                                x=scores_df['period_label'],
+                                y=aimline_vals,
+                                mode='lines',
+                                name='Aimline (Goal)',
+                                line=dict(color='#6c757d', width=2, dash='dash')
+                            ))
+                            # Evaluate PM trend status
+                            actual_scores = scores_df['overall_literacy_score'].dropna().tolist()
+                            trend_status = pm_trend_status(actual_scores, aimline_vals)
+                            trend_color = pm_status_color(trend_status)
+                            fig.add_annotation(
+                                x=scores_df['period_label'].iloc[-1],
+                                y=max(actual_scores[-1] if actual_scores else 0, tgt),
+                                text=f"PM Status: {trend_status}",
+                                showarrow=True, arrowhead=2,
+                                font=dict(color=trend_color, size=12),
+                                bgcolor='white', bordercolor=trend_color,
+                            )
+
                 fig.update_layout(
-                    title='Student Progress Across All Grades',
+                    title='Student Progress with Benchmark Zones',
                     xaxis_title='Grade - Assessment Period',
                     yaxis_title='Literacy Score',
                     height=400,
                     yaxis=dict(range=[0, 100]),
                     xaxis=dict(tickangle=45)
                 )
-                
+
                 st.plotly_chart(fig, use_container_width=True)
             
             with chart_col2:
@@ -640,14 +708,100 @@ def show_student_detail():
             goals_df['actual_growth'] = (latest_val - goals_df['baseline_score']) if latest_val is not None else None
             st.dataframe(goals_df[['measure','baseline_score','target_score','expected_weekly_growth','actual_growth','start_date','target_date']], use_container_width=True, height=180)
 
+    # ── Growth Rate Classification (Pathways of Progress lite) ──────────
+    st.subheader("Growth Rate Analysis")
+    if not all_scores_df.empty and len(all_scores_df) >= 2:
+        period_order = {'Fall': 1, 'Winter': 2, 'Spring': 3, 'EOY': 4}
+        growth_rows = []
+        for grade_val in all_scores_df['grade_level'].unique():
+            grade_scores = all_scores_df[all_scores_df['grade_level'] == grade_val].copy()
+            grade_scores['p_order'] = grade_scores['assessment_period'].map(period_order).fillna(0)
+            grade_scores = grade_scores.sort_values('p_order')
+            for i in range(1, len(grade_scores)):
+                prev = grade_scores.iloc[i - 1]
+                curr = grade_scores.iloc[i]
+                prev_score = prev.get('overall_literacy_score')
+                curr_score = curr.get('overall_literacy_score')
+                if prev_score is not None and curr_score is not None and pd.notna(prev_score) and pd.notna(curr_score):
+                    actual_growth = curr_score - prev_score
+                    classification = classify_growth(
+                        'Composite', grade_val,
+                        prev['assessment_period'], curr['assessment_period'],
+                        actual_growth
+                    )
+                    growth_rows.append({
+                        'Grade': grade_val,
+                        'From': prev['assessment_period'],
+                        'To': curr['assessment_period'],
+                        'Start Score': f"{prev_score:.1f}",
+                        'End Score': f"{curr_score:.1f}",
+                        'Growth': f"{actual_growth:+.1f}",
+                        'Growth Rate': classification or 'N/A',
+                    })
+        if growth_rows:
+            growth_df = pd.DataFrame(growth_rows)
+            def color_growth(val):
+                colors = {
+                    'Well Above Typical': 'background-color: #d4edda; color: #155724',
+                    'Above Typical': 'background-color: #d4edda; color: #155724',
+                    'Typical': 'background-color: #d1ecf1; color: #0c5460',
+                    'Below Typical': 'background-color: #fff3cd; color: #856404',
+                    'Well Below Typical': 'background-color: #f8d7da; color: #721c24',
+                }
+                return colors.get(val, '')
+            styled = growth_df.style.map(color_growth, subset=['Growth Rate'])
+            st.dataframe(styled, use_container_width=True, height=200)
+        else:
+            st.info("Not enough data points to calculate growth rates.")
+    else:
+        st.info("At least two assessment periods needed for growth analysis.")
+
+    # ── Teacher Outputs (Parent Report + Intervention Export) ─────────
     st.subheader("Teacher Outputs")
     out1, out2 = st.columns(2)
     with out1:
-        if st.button('Parent-ready summary'):
-            score_text = f"{latest_score.get('overall_literacy_score', 'N/A'):.1f}" if latest_score and latest_score.get('overall_literacy_score') is not None else 'N/A'
-            risk_text = latest_score.get('risk_level', 'Unknown') if latest_score else 'Unknown'
-            trend_text = latest_score.get('trend', 'Unknown') if latest_score else 'Unknown'
-            st.success(f"{student_name} currently has a literacy score of {score_text}, risk level {risk_text}, and trend {trend_text}. Instruction should continue targeting identified needs and progress checks should continue regularly.")
+        # Polished parent report
+        if latest_score:
+            components_dict = {
+                'reading_component': latest_score.get('reading_component'),
+                'phonics_component': latest_score.get('phonics_component'),
+                'spelling_component': latest_score.get('spelling_component'),
+                'sight_words_component': latest_score.get('sight_words_component'),
+            }
+            inv_list = []
+            if not interventions_df.empty:
+                for _, r in interventions_df.head(5).iterrows():
+                    inv_list.append(r.to_dict())
+            goal_list = []
+            if not student_records.empty:
+                for sid in student_records['student_id'].tolist():
+                    gf = get_student_goals(sid)
+                    if not gf.empty:
+                        for _, gr in gf.iterrows():
+                            goal_list.append(gr.to_dict())
+
+            report_html = generate_parent_report_html(
+                student_name=student_name,
+                grade=selected_student_row.get('grade_level', ''),
+                teacher=selected_student_row.get('teacher_name', ''),
+                school_year=selected_student_row.get('school_year', ''),
+                period=latest_score.get('assessment_period', ''),
+                overall_score=latest_score.get('overall_literacy_score'),
+                risk_level=latest_score.get('risk_level', 'Unknown'),
+                components=components_dict,
+                interventions=inv_list,
+                goals=goal_list if goal_list else None,
+                benchmark_status=bm_status,
+            )
+            st.download_button(
+                'Download Parent Report (HTML/PDF-ready)',
+                report_html.encode('utf-8'),
+                f"{student_name.lower().replace(' ','_')}_parent_report.html",
+                'text/html',
+            )
+        else:
+            st.info("No score data available for parent report.")
+
     with out2:
         score_val = latest_score.get('overall_literacy_score') if latest_score else 'N/A'
         risk_val = latest_score.get('risk_level') if latest_score else 'N/A'
@@ -671,7 +825,7 @@ def show_student_detail():
         html_parts.append("</body></html>")
         html_content = "\n".join(html_parts)
         st.download_button(
-            'Intervention plan summary export (HTML/PDF-ready)',
+            'Intervention plan export (HTML)',
             html_content.encode('utf-8'),
             f"{student_name.lower().replace(' ','_')}_intervention_plan.html",
             'text/html'

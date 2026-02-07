@@ -12,6 +12,10 @@ from visualizations import (
     create_score_trend_chart
 )
 from calculations import determine_risk_level
+from benchmarks import (
+    get_benchmark_status, get_support_level, benchmark_color,
+    benchmark_emoji, group_students,
+)
 
 def show_overview_dashboard():
     st.title("📊 Overview Dashboard")
@@ -548,6 +552,51 @@ def show_overview_dashboard():
             tmp['subgroup'] = col
             parts.append(tmp)
         st.dataframe(pd.concat(parts, ignore_index=True), use_container_width=True)
+
+    # ── Instructional Grouping (Core / Strategic / Intensive) ───────────
+    st.markdown("---")
+    st.subheader("Instructional Grouping (Acadience-Aligned)")
+    st.caption("Students grouped by benchmark status into Core (Tier 1), Strategic (Tier 2), and Intensive (Tier 3) support levels.")
+
+    if not df.empty:
+        grouping_df = group_students(df, df)
+        if not grouping_df.empty and 'support_level' in grouping_df.columns:
+            tier_counts = grouping_df['support_level'].value_counts()
+            gc1, gc2, gc3 = st.columns(3)
+            with gc1:
+                core_n = tier_counts.get('Core (Tier 1)', 0)
+                st.metric("Core (Tier 1)", core_n, help="At/Above Benchmark — effective core instruction")
+            with gc2:
+                strat_n = tier_counts.get('Strategic (Tier 2)', 0)
+                st.metric("Strategic (Tier 2)", strat_n, help="Below Benchmark — targeted supplemental support")
+            with gc3:
+                intens_n = tier_counts.get('Intensive (Tier 3)', 0)
+                st.metric("Intensive (Tier 3)", intens_n, help="Well Below Benchmark — intensive intervention needed")
+
+            # Show grouping table with color coding
+            display_groups = grouping_df[['student_name', 'grade_level', 'score', 'benchmark_status', 'support_level', 'weakest_skill']].copy()
+            display_groups.columns = ['Student', 'Grade', 'Score', 'Benchmark Status', 'Support Level', 'Weakest Skill']
+            display_groups['Score'] = display_groups['Score'].apply(lambda x: f"{x:.1f}" if pd.notna(x) else "N/A")
+            display_groups = display_groups.sort_values(['Support Level', 'Student'])
+
+            def color_tier(val):
+                if 'Core' in str(val):
+                    return 'background-color: #d4edda; color: #155724'
+                elif 'Strategic' in str(val):
+                    return 'background-color: #fff3cd; color: #856404'
+                elif 'Intensive' in str(val):
+                    return 'background-color: #f8d7da; color: #721c24'
+                return ''
+
+            styled_groups = display_groups.style.map(color_tier, subset=['Support Level'])
+            st.dataframe(styled_groups, use_container_width=True, height=300)
+
+            # Download grouping report
+            st.download_button(
+                'Download Grouping Report (CSV)',
+                grouping_df.to_csv(index=False),
+                'instructional_grouping.csv', 'text/csv'
+            )
 
     st.markdown("---")
     

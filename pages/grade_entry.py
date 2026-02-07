@@ -11,6 +11,7 @@ from database import (
 )
 from calculations import process_assessment_score
 from utils import recalculate_literacy_scores
+from benchmarks import get_benchmark_status, benchmark_emoji, get_support_level
 from datetime import datetime
 
 def show_grade_entry():
@@ -164,9 +165,20 @@ def show_single_entry_form():
                 "Spelling_Inventory",
                 "Benchmark",
                 "Easy_CBM",
-                "Phonics_Survey"
+                "Phonics_Survey",
+                "--- Acadience Measures ---",
+                "ORF",
+                "NWF-CLS",
+                "NWF-WWR",
+                "PSF",
+                "FSF",
+                "Maze",
+                "Retell",
             ]
         )
+        # Warn if separator selected
+        if assessment_type == "--- Acadience Measures ---":
+            st.warning("Please select an actual assessment type above or below the separator.")
     
     with col2:
         assessment_period = st.selectbox(
@@ -222,7 +234,31 @@ def show_single_entry_form():
     elif assessment_type == "Phonics_Survey":
         score_value = st.text_input("Phonics Score (e.g., 14/15 or percentage)")
         score_normalized = process_assessment_score(assessment_type, score_value)
-    
+
+    elif assessment_type in ("ORF", "NWF-CLS", "NWF-WWR", "PSF", "FSF", "Maze", "Retell"):
+        measure_labels = {
+            'ORF': 'Words Correct per Minute', 'NWF-CLS': 'Correct Letter Sounds',
+            'NWF-WWR': 'Whole Words Read', 'PSF': 'Phonemes Correct',
+            'FSF': 'First Sounds Correct', 'Maze': 'Maze Adjusted Score',
+            'Retell': 'Words in Retell',
+        }
+        raw_score = st.number_input(
+            f"{measure_labels.get(assessment_type, 'Score')}",
+            min_value=0, value=0, step=1
+        )
+        score_value = str(raw_score)
+        score_normalized = float(raw_score)  # raw score (not 0-100 normalized)
+
+        # Live benchmark preview
+        if raw_score > 0 and grade_level and assessment_period:
+            bm_st = get_benchmark_status(assessment_type, grade_level, assessment_period, raw_score)
+            if bm_st:
+                icon = benchmark_emoji(bm_st)
+                support = get_support_level(bm_st)
+                st.info(f"{icon} **{bm_st}** — {support}")
+            else:
+                st.caption("No Acadience benchmark data for this measure/grade/period combination.")
+
     # Additional Fields
     st.markdown("### Additional Information")
     
