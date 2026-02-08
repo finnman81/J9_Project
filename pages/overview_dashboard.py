@@ -22,28 +22,90 @@ from erb_scoring import (
 # ---------------------------------------------------------------------------
 
 _SUPPORT_LABEL = {'High': 'Needs Support', 'Medium': 'Monitor', 'Low': 'On Track'}
-_SUPPORT_COLOR = {
-    'Needs Support': 'background-color: #f5c6cb; color: #721c24',
-    'Monitor':       'background-color: #ffeeba; color: #856404',
-    'On Track':      'background-color: #c3e6cb; color: #155724',
+_SUPPORT_BG = {
+    'Needs Support': ('#f5c6cb', '#721c24'),
+    'Monitor':       ('#ffeeba', '#856404'),
+    'On Track':      ('#c3e6cb', '#155724'),
 }
+_TIER_BG = {
+    'Core (Tier 1)':      ('#c3e6cb', '#155724'),
+    'Strategic (Tier 2)': ('#ffeeba', '#856404'),
+    'Intensive (Tier 3)': ('#f5c6cb', '#721c24'),
+}
+
 
 def _support_label(risk: str) -> str:
     return _SUPPORT_LABEL.get(risk, risk or 'N/A')
 
 
-def _color_support(val):
-    return _SUPPORT_COLOR.get(val, '')
+def _render_colored_table(df: pd.DataFrame, color_cols: dict, max_height: int = 400):
+    """Render a DataFrame as an HTML table with colored cells for specific columns.
+    
+    color_cols: dict mapping column name -> dict mapping cell value -> (bg, fg) tuple
+    """
+    # Build CSS
+    css = """
+    <style>
+    .colored-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+        font-family: "Source Sans Pro", sans-serif;
+    }
+    .colored-table th {
+        background-color: #fafafa;
+        border-bottom: 2px solid #e0e0e0;
+        padding: 8px 12px;
+        text-align: left;
+        font-weight: 600;
+        color: #333;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+    .colored-table td {
+        padding: 6px 12px;
+        border-bottom: 1px solid #f0f0f0;
+        color: #333;
+    }
+    .colored-table tr:hover td {
+        background-color: #f8f9fa !important;
+    }
+    .colored-table-wrap {
+        max-height: HEIGHT_PLACEHOLDERpx;
+        overflow-y: auto;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+    }
+    .pill {
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 13px;
+        display: inline-block;
+        white-space: nowrap;
+    }
+    </style>
+    """.replace("HEIGHT_PLACEHOLDER", str(max_height))
 
+    # Build table
+    html = css + f'<div class="colored-table-wrap"><table class="colored-table"><thead><tr>'
+    for col in df.columns:
+        html += f'<th>{col}</th>'
+    html += '</tr></thead><tbody>'
 
-def _color_tier(val):
-    if 'Core' in str(val):
-        return 'background-color: #c3e6cb; color: #155724'
-    elif 'Strategic' in str(val):
-        return 'background-color: #ffeeba; color: #856404'
-    elif 'Intensive' in str(val):
-        return 'background-color: #f5c6cb; color: #721c24'
-    return ''
+    for _, row in df.iterrows():
+        html += '<tr>'
+        for col in df.columns:
+            val = str(row[col]) if pd.notna(row[col]) else '--'
+            if col in color_cols and val in color_cols[col]:
+                bg, fg = color_cols[col][val]
+                html += f'<td><span class="pill" style="background-color:{bg};color:{fg};">{val}</span></td>'
+            else:
+                html += f'<td>{val}</td>'
+        html += '</tr>'
+    html += '</tbody></table></div>'
+    return html
 
 # ---------------------------------------------------------------------------
 # Main dashboard
@@ -306,11 +368,13 @@ def show_overview_dashboard():
             tbl['Focus Area'] = tbl['Focus Area'].fillna('--')
             tbl = tbl.sort_values(['Support Tier', 'Student'])
 
-            style_cols = ['Support Tier']
+            # Build color map for tier columns
+            tier_color_map = {}
+            tier_color_map['Support Tier'] = _TIER_BG
             if has_erb and 'ERB Tier' in tbl.columns:
-                style_cols.append('ERB Tier')
-            styled = tbl.style.map(_color_tier, subset=style_cols)
-            st.dataframe(styled, use_container_width=True, height=300)
+                tier_color_map['ERB Tier'] = _TIER_BG
+            st.markdown(_render_colored_table(tbl, tier_color_map, max_height=400),
+                        unsafe_allow_html=True)
 
             st.download_button('Download Grouping Report (CSV)',
                                grouping_df.to_csv(index=False),
@@ -329,8 +393,10 @@ def show_overview_dashboard():
         roster['Support Need'] = roster['Support Need'].apply(_support_label)
         roster = roster.sort_values(['Student', 'Grade'])
 
-        styled_roster = roster.style.map(_color_support, subset=['Support Need'])
-        st.dataframe(styled_roster, use_container_width=True, height=400)
+        st.markdown(_render_colored_table(
+            roster, {'Support Need': _SUPPORT_BG}, max_height=500),
+            unsafe_allow_html=True)
+        st.markdown("")
 
         st.download_button('Download Student Roster (CSV)',
                            roster.to_csv(index=False),
