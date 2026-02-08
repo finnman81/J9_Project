@@ -12,10 +12,9 @@ from database import (
 )
 from calculations import calculate_component_scores, calculate_trend
 from benchmarks import (
-    get_benchmark_status, get_benchmark_thresholds, get_support_level,
-    classify_growth, benchmark_color, benchmark_emoji,
-    compute_aimline, pm_trend_status, pm_status_color,
-    generate_parent_report_html, ACADIENCE_MEASURES, MEASURE_LABELS,
+    get_benchmark_status, get_support_level,
+    benchmark_color, benchmark_emoji,
+    generate_parent_report_html, MEASURE_LABELS,
     MEASURES_BY_GRADE, GRADE_ALIASES, PERIOD_MAP,
 )
 from erb_scoring import (
@@ -48,11 +47,10 @@ _BM_STATUS_BG = {
     'Well Below Benchmark': ('#f5c6cb', '#721c24'),
 }
 _GROWTH_BG = {
-    'Well Above Typical': ('#c3e6cb', '#155724'),
-    'Above Typical':      ('#c3e6cb', '#155724'),
-    'Typical':            ('#d1ecf1', '#0c5460'),
-    'Below Typical':      ('#ffeeba', '#856404'),
-    'Well Below Typical': ('#f5c6cb', '#721c24'),
+    'Strong Growth':   ('#c3e6cb', '#155724'),
+    'Moderate Growth': ('#d1ecf1', '#0c5460'),
+    'Minimal Growth':  ('#ffeeba', '#856404'),
+    'Decline':         ('#f5c6cb', '#721c24'),
 }
 
 
@@ -101,21 +99,16 @@ def show_student_detail():
         st.warning("No students found. Add students via the Grade Entry page.")
         return
 
-    sel = students_df[['student_id', 'student_name', 'grade_level', 'school_year', 'class_name']].copy()
-    sel['label'] = sel.apply(
-        lambda r: f"{r['student_name']}  |  {r['grade_level']}  |  {r['school_year']}"
-        + (f"  |  {r['class_name']}" if pd.notna(r['class_name']) and r['class_name'] else ''),
-        axis=1)
-    sel = sel.sort_values(['student_name', 'school_year', 'grade_level'])
+    # Unique student names for a clean dropdown
+    unique_names = sorted(students_df['student_name'].unique().tolist())
 
-    selected_id = st.selectbox("Select Student",
-        sel['student_id'].tolist(),
-        format_func=lambda sid: sel.loc[sel['student_id'] == sid, 'label'].iloc[0])
+    student_name = st.selectbox("Select Student", unique_names)
 
-    stu_row = students_df[students_df['student_id'] == selected_id].iloc[0]
-    student_name = stu_row['student_name']
     student_records = students_df[students_df['student_name'] == student_name]
+    # Pick the most-recent record as the "primary" row (latest school year)
+    stu_row = student_records.sort_values('school_year').iloc[-1]
     grade_years = student_records[['grade_level', 'school_year', 'class_name', 'teacher_name']].drop_duplicates()
+    selected_id = int(stu_row['student_id'])
 
     # Grade filter (compact)
     available_grades = sorted(grade_years['grade_level'].unique().tolist())
@@ -158,8 +151,6 @@ def show_student_detail():
     conn.close()
 
     # Filter by selected grades
-    for df_name in [all_scores_df, assessments_df, interventions_df]:
-        pass  # filter below
     if not all_scores_df.empty:
         all_scores_df = all_scores_df[all_scores_df['grade_level'].isin(selected_grades)].drop_duplicates().reset_index(drop=True)
     if not assessments_df.empty:
@@ -198,11 +189,13 @@ def show_student_detail():
     support_label = _SUPPORT_LABEL.get(risk_level, risk_level)
 
     if latest_score:
-        current_grade = latest_score.get('grade_level', '')
-        current_period = latest_score.get('assessment_period', '')
-        bm_status = get_benchmark_status('Composite', current_grade, current_period, overall_score)
-        if bm_status is None:
-            bm_status = 'At Benchmark' if overall_score >= 70 else ('Below Benchmark' if overall_score >= 50 else 'Well Below Benchmark')
+        # Use internal 0-100 thresholds (overall_literacy_score is normalized, NOT raw Acadience)
+        if overall_score >= 70:
+            bm_status = 'At Benchmark'
+        elif overall_score >= 50:
+            bm_status = 'Below Benchmark'
+        else:
+            bm_status = 'Well Below Benchmark'
         support_tier = get_support_level(bm_status)
     else:
         support_tier = 'Unknown'
@@ -379,37 +372,9 @@ def show_student_detail():
         for s in erb_summaries:
             erb_latest[s['subtest']] = s
 
-        ec1, ec2 = st.columns(2)
-        with ec1:
-            labels = [erb_latest[k]['label'] for k in erb_latest]
-            stanines = [erb_latest[k]['stanine'] or 0 for k in erb_latest]
-            fig_s = go.Figure()
-            fig_s.add_trace(go.Bar(x=labels, y=stanines,
-                marker_color=[stanine_color(s) for s in stanines],
-                text=[str(s) for s in stanines], textposition='auto'))
-            fig_s.add_hrect(y0=0, y1=3.5, fillcolor="#dc3545", opacity=0.06, line_width=0)
-            fig_s.add_hrect(y0=3.5, y1=6.5, fillcolor="#ffc107", opacity=0.06, line_width=0)
-            fig_s.add_hrect(y0=6.5, y1=9.5, fillcolor="#28a745", opacity=0.06, line_width=0)
-            fig_s.update_layout(title='Stanine Scores', yaxis=dict(range=[0, 9.5], dtick=1),
-                                height=320, xaxis=dict(tickangle=30), margin=dict(t=40, b=60))
-            st.plotly_chart(fig_s, width='stretch')
-
-        with ec2:
-            pcts = [erb_latest[k].get('percentile') or 0 for k in erb_latest]
-            fig_p = go.Figure()
-            fig_p.add_trace(go.Bar(x=labels, y=pcts,
-                marker_color=[percentile_color(p) for p in pcts],
-                text=[f"{int(p)}th" for p in pcts], textposition='auto'))
-            fig_p.add_hline(y=50, line_dash="dash", line_color="#999",
-                            annotation_text="50th %ile", annotation_position="right")
-            fig_p.update_layout(title='Percentile Ranks', yaxis=dict(range=[0, 100]),
-                                height=320, xaxis=dict(tickangle=30), margin=dict(t=40, b=60))
-            st.plotly_chart(fig_p, width='stretch')
-
-        # ERB detail table
+        # Compact summary table (always visible)
         erb_tbl_rows = []
         for s in erb_summaries:
-            g_class = classify_growth_percentile(s['growth_percentile']) if s['growth_percentile'] else 'N/A'
             erb_tbl_rows.append({
                 'Subtest': s['label'],
                 'Stanine': f"{stanine_emoji(s['stanine'])} {s['stanine']}" if s['stanine'] else '--',
@@ -420,6 +385,35 @@ def show_student_detail():
         erb_tbl = pd.DataFrame(erb_tbl_rows)
         st.markdown(_render_colored_table(erb_tbl, {'Tier': _TIER_BG}, max_height=280),
                     unsafe_allow_html=True)
+
+        # Charts in expander
+        with st.expander("ERB Charts", expanded=False):
+            ec1, ec2 = st.columns(2)
+            with ec1:
+                labels = [erb_latest[k]['label'] for k in erb_latest]
+                stanines = [erb_latest[k]['stanine'] or 0 for k in erb_latest]
+                fig_s = go.Figure()
+                fig_s.add_trace(go.Bar(x=labels, y=stanines,
+                    marker_color=[stanine_color(s) for s in stanines],
+                    text=[str(s) for s in stanines], textposition='auto'))
+                fig_s.add_hrect(y0=0, y1=3.5, fillcolor="#dc3545", opacity=0.06, line_width=0)
+                fig_s.add_hrect(y0=3.5, y1=6.5, fillcolor="#ffc107", opacity=0.06, line_width=0)
+                fig_s.add_hrect(y0=6.5, y1=9.5, fillcolor="#28a745", opacity=0.06, line_width=0)
+                fig_s.update_layout(title='Stanine Scores', yaxis=dict(range=[0, 9.5], dtick=1),
+                                    height=320, xaxis=dict(tickangle=30), margin=dict(t=40, b=60))
+                st.plotly_chart(fig_s, width='stretch')
+
+            with ec2:
+                pcts = [erb_latest[k].get('percentile') or 0 for k in erb_latest]
+                fig_p = go.Figure()
+                fig_p.add_trace(go.Bar(x=labels, y=pcts,
+                    marker_color=[percentile_color(p) for p in pcts],
+                    text=[f"{int(p)}th" for p in pcts], textposition='auto'))
+                fig_p.add_hline(y=50, line_dash="dash", line_color="#999",
+                                annotation_text="50th %ile", annotation_position="right")
+                fig_p.update_layout(title='Percentile Ranks', yaxis=dict(range=[0, 100]),
+                                    height=320, xaxis=dict(tickangle=30), margin=dict(t=40, b=60))
+                st.plotly_chart(fig_p, width='stretch')
 
     # ── Growth & Component Analysis (expander) ────────────────────────────
     st.markdown("")
@@ -437,15 +431,22 @@ def show_student_detail():
                     ps, cs = prev.get('overall_literacy_score'), curr.get('overall_literacy_score')
                     if ps is not None and cs is not None and pd.notna(ps) and pd.notna(cs):
                         growth = cs - ps
-                        cl = classify_growth('Composite', gv,
-                                             prev['assessment_period'], curr['assessment_period'], growth)
+                        # Internal growth labels for normalized 0-100 scores
+                        if growth >= 10:
+                            rate = 'Strong Growth'
+                        elif growth >= 3:
+                            rate = 'Moderate Growth'
+                        elif growth >= 0:
+                            rate = 'Minimal Growth'
+                        else:
+                            rate = 'Decline'
                         g_rows.append({
                             'Grade': gv,
                             'From': prev['assessment_period'],
                             'To': curr['assessment_period'],
                             'Start': f"{ps:.0f}", 'End': f"{cs:.0f}",
                             'Growth': f"{growth:+.0f}",
-                            'Rate': cl or 'N/A',
+                            'Rate': rate,
                         })
             if g_rows:
                 st.markdown("**Growth Rate Classification**")
