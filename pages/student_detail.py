@@ -272,7 +272,7 @@ def show_student_detail():
                     height=300,
                     yaxis=dict(range=[0, 100])
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
     
     st.markdown("---")
     
@@ -472,12 +472,12 @@ def show_student_detail():
                     xaxis=dict(tickangle=45)
                 )
 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             
             with chart_col2:
                 reading_chart = create_reading_level_progression(assessments_df)
                 if reading_chart:
-                    st.plotly_chart(reading_chart, use_container_width=True)
+                    st.plotly_chart(reading_chart, width='stretch')
                 else:
                     st.info("No reading level data available")
             
@@ -519,7 +519,7 @@ def show_student_detail():
                         ),
                         xaxis=dict(tickangle=45)
                     )
-                    st.plotly_chart(fig_risk, use_container_width=True)
+                    st.plotly_chart(fig_risk, width='stretch')
             
             with graph_col2:
                 # Component Scores Over Time
@@ -565,7 +565,7 @@ def show_student_detail():
                         xaxis=dict(tickangle=45),
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                     )
-                    st.plotly_chart(fig_components, use_container_width=True)
+                    st.plotly_chart(fig_components, width='stretch')
             
             # Grade Comparison Chart
             if len(selected_grades) > 1:
@@ -590,7 +590,7 @@ def show_student_detail():
                     height=350,
                     yaxis=dict(range=[0, 100])
                 )
-                st.plotly_chart(fig_grade, use_container_width=True)
+                st.plotly_chart(fig_grade, width='stretch')
             
             # Component breakdown
             if latest_score and not assessments_df.empty:
@@ -634,7 +634,7 @@ def show_student_detail():
                         previous_components_dict = calculate_component_scores(prev_period_assessments, previous_period)
                 
                 component_chart = create_component_breakdown(current_components_dict, previous_components_dict)
-                st.plotly_chart(component_chart, use_container_width=True)
+                st.plotly_chart(component_chart, width='stretch')
         else:
             st.info("No literacy score history available for visualization.")
     else:
@@ -667,7 +667,7 @@ def show_student_detail():
         timeline_df = pd.DataFrame(timeline_rows)
         timeline_df['date'] = pd.to_datetime(timeline_df['date'], errors='coerce')
         timeline_df = timeline_df.sort_values('date', ascending=False)
-        st.dataframe(timeline_df, use_container_width=True, height=240)
+        st.dataframe(timeline_df, width='stretch', height=240)
     else:
         st.info("No timeline events available.")
 
@@ -684,7 +684,7 @@ def show_student_detail():
         st.success('Teacher note saved.')
         st.rerun()
     if 'all_notes' in locals() and not all_notes.empty:
-        st.dataframe(all_notes[['note_date','tag','note_text','created_by']], use_container_width=True, height=160)
+        st.dataframe(all_notes[['note_date','tag','note_text','created_by']], width='stretch', height=160)
 
     st.subheader("Goal Tracking")
     gcol1, gcol2, gcol3, gcol4 = st.columns(4)
@@ -713,7 +713,7 @@ def show_student_detail():
             goals_df = pd.concat(goal_frames, ignore_index=True)
             latest_val = latest_score.get(goal_measure) if latest_score and goal_measure in latest_score else None
             goals_df['actual_growth'] = (latest_val - goals_df['baseline_score']) if latest_val is not None else None
-            st.dataframe(goals_df[['measure','baseline_score','target_score','expected_weekly_growth','actual_growth','start_date','target_date']], use_container_width=True, height=180)
+            st.dataframe(goals_df[['measure','baseline_score','target_score','expected_weekly_growth','actual_growth','start_date','target_date']], width='stretch', height=180)
 
     # ── Growth Rate Classification (Pathways of Progress lite) ──────────
     st.subheader("Growth Rate Analysis")
@@ -757,7 +757,7 @@ def show_student_detail():
                 }
                 return colors.get(val, '')
             styled = growth_df.style.map(color_growth, subset=['Growth Rate'])
-            st.dataframe(styled, use_container_width=True, height=200)
+            st.dataframe(styled, width='stretch', height=200)
         else:
             st.info("Not enough data points to calculate growth rates.")
     else:
@@ -808,7 +808,7 @@ def show_student_detail():
                 yaxis_title='Stanine', yaxis=dict(range=[0, 9.5], dtick=1),
                 xaxis_title='', height=350, xaxis=dict(tickangle=30),
             )
-            st.plotly_chart(fig_stanine, use_container_width=True)
+            st.plotly_chart(fig_stanine, width='stretch')
 
         # ── Percentile display ────────────────────────────
         with erb_chart_col2:
@@ -829,7 +829,7 @@ def show_student_detail():
                 yaxis_title='Percentile', yaxis=dict(range=[0, 100]),
                 xaxis_title='', height=350, xaxis=dict(tickangle=30),
             )
-            st.plotly_chart(fig_pct, use_container_width=True)
+            st.plotly_chart(fig_pct, width='stretch')
 
         # ── Detail table ──────────────────────────────────
         erb_table_rows = []
@@ -859,7 +859,7 @@ def show_student_detail():
             return ''
 
         styled_erb = erb_table_df.style.map(color_erb_tier, subset=['Tier'])
-        st.dataframe(styled_erb, use_container_width=True, height=250)
+        st.dataframe(styled_erb, width='stretch', height=250)
 
         # ── Growth percentile tracking across years ───────
         growth_data = [s for s in erb_summaries if s.get('growth_percentile')]
@@ -889,7 +889,7 @@ def show_student_detail():
                 height=350, xaxis=dict(tickangle=30),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             )
-            st.plotly_chart(fig_growth, use_container_width=True)
+            st.plotly_chart(fig_growth, width='stretch')
 
     # ── Teacher Outputs (Parent Report + Intervention Export) ─────────
     st.subheader("Teacher Outputs")
@@ -1005,7 +1005,7 @@ def show_student_detail():
             lambda x: f"{x:.1f}" if pd.notna(x) else "N/A"
         )
         
-        st.dataframe(display_assessments, use_container_width=True, height=300)
+        st.dataframe(display_assessments, width='stretch', height=300)
     else:
         st.info("No assessment history available.")
     
@@ -1024,7 +1024,7 @@ def show_student_detail():
             'Frequency', 'Duration (min)', 'Status', 'Notes'
         ]
         
-        st.dataframe(display_interventions, use_container_width=True)
+        st.dataframe(display_interventions, width='stretch')
     else:
         st.info("No intervention records for this student.")
     
@@ -1033,7 +1033,7 @@ def show_student_detail():
     action_col1, action_col2 = st.columns(2)
     
     with action_col1:
-        if st.button("Add Assessment", use_container_width=True):
+        if st.button("Add Assessment", width='stretch'):
             st.session_state['redirect_to_entry'] = True
             st.session_state['entry_student_name'] = student_name
             # Pre-select the most recent grade
@@ -1043,6 +1043,6 @@ def show_student_detail():
             st.rerun()
     
     with action_col2:
-        if st.button("Add Intervention", use_container_width=True):
+        if st.button("Add Intervention", width='stretch'):
             st.session_state['add_intervention'] = True
             st.session_state['intervention_student_name'] = student_name

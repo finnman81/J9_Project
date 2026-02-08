@@ -374,7 +374,7 @@ def show_single_entry_form():
     col1, col2, col3 = st.columns([1, 1, 2])
     
     with col1:
-        if st.button("Save Assessment", type="primary", use_container_width=True):
+        if st.button("Save Assessment", type="primary", width='stretch'):
             if student_option == "Create New Student":
                 if not student_name or not grade_level:
                     st.error("Please fill in required fields: Student Name and Grade Level")
@@ -455,7 +455,7 @@ def show_single_entry_form():
                 st.error("Please select or create a student first")
     
     with col2:
-        if st.button("Save and Add Another", use_container_width=True):
+        if st.button("Save and Add Another", width='stretch'):
             if student_option == "Create New Student":
                 if not student_name or not grade_level:
                     st.error("Please fill in required fields: Student Name and Grade Level")
@@ -573,8 +573,8 @@ def show_bulk_entry_form():
             'Assessment_Type':'Reading_Level', 'Assessment_Period':'Fall', 'Score_Value':'',
             'Needs_Review':False, 'Save_Draft':False, 'Notes':'', 'Concerns':''
         } for _ in range(8)])
-    st.session_state.bulk_grid = st.data_editor(st.session_state.bulk_grid, num_rows='dynamic', use_container_width=True)
-    if st.button('Save Grid Entries', use_container_width=True):
+    st.session_state.bulk_grid = st.data_editor(st.session_state.bulk_grid, num_rows='dynamic', width='stretch')
+    if st.button('Save Grid Entries', width='stretch'):
         grid_saved, grid_errors = 0, 0
         for _, row in st.session_state.bulk_grid.iterrows():
             try:
@@ -627,7 +627,7 @@ def show_bulk_entry_form():
             
             # Show preview
             st.subheader("Data Preview")
-            st.dataframe(bulk_df.head(10), use_container_width=True)
+            st.dataframe(bulk_df.head(10), width='stretch')
             
             # Bulk entry settings
             st.markdown("### Entry Settings")
@@ -663,7 +663,7 @@ def show_bulk_entry_form():
                     st.success("✓ Data validation passed")
             
             # Save button
-            if st.button("Save All Entries", type="primary", use_container_width=True):
+            if st.button("Save All Entries", type="primary", width='stretch'):
                 saved_count = 0
                 error_count = 0
                 

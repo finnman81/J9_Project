@@ -263,7 +263,7 @@ def show_overview_dashboard():
                     height=370, margin=dict(t=40, b=40),
                     xaxis=dict(range=[0, 100]),
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
     with ch2:
         # Average score by grade (clean bars, no error bars)
@@ -290,7 +290,7 @@ def show_overview_dashboard():
                 height=370, margin=dict(t=40, b=40),
                 yaxis=dict(range=[0, 105]),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
     # ── Support Tiers ─────────────────────────────────────────────────────
     st.markdown("")
@@ -450,7 +450,7 @@ def show_overview_dashboard():
                                       xaxis_title='Year', yaxis_title='Students',
                                       height=320, margin=dict(t=40, b=40),
                                       legend=dict(orientation='h', y=1.12))
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
 
         with da2:
             # Early warning flags
@@ -475,10 +475,12 @@ def show_overview_dashboard():
                         flags = []
                         if scores[-1] < scores[-2] < scores[-3]:
                             flags.append('Declining trend')
-                        if abs(scores[-1] - scores[-3]) <= 1:
+                        if abs(scores[-1] - scores[-3]) <= 2 and len(scores) >= 3:
                             flags.append('No progress')
-                        if np.std(scores[-3:]) >= 8:
+                        if np.std(scores[-3:]) >= 18:
                             flags.append('Inconsistent scores')
+                        if len(scores) >= 2 and scores[-1] < 40:
+                            flags.append('Score below 40')
                         if flags:
                             warn_rows.append({
                                 'Student': g.iloc[-1]['student_name'],
@@ -486,7 +488,7 @@ def show_overview_dashboard():
                             })
             if warn_rows:
                 st.markdown("**Early Warning Flags**")
-                st.dataframe(pd.DataFrame(warn_rows), use_container_width=True, height=200)
+                st.dataframe(pd.DataFrame(warn_rows), width='stretch', height=200)
             else:
                 st.info("No early warning flags at this time.")
 
@@ -515,7 +517,7 @@ def show_overview_dashboard():
                 height=300, margin=dict(t=20, b=40),
                 yaxis=dict(range=[0, max(measure_df['avg_score'].max() * 1.15, 100)]),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
     # ── Data Quality (collapsible) ────────────────────────────────────────
     with st.expander("Data Quality", expanded=False):
@@ -538,6 +540,6 @@ def show_overview_dashboard():
             conn.close()
             if not missing_df.empty:
                 st.markdown("**Missing Assessments**")
-                st.dataframe(missing_df, use_container_width=True, height=160)
+                st.dataframe(missing_df, width='stretch', height=160)
             else:
                 st.success("All students have assessment data.")
