@@ -14,7 +14,8 @@ from benchmarks import (
 )
 from erb_scoring import (
     ERB_SUBTESTS, ERB_SUBTEST_LABELS, summarize_erb_scores,
-    get_latest_erb_tier, blend_tiers,
+    get_latest_erb_tier, blend_tiers, get_erb_independent_norm,
+    parse_erb_score_value,
 )
 
 # ---------------------------------------------------------------------------
@@ -379,6 +380,99 @@ def show_overview_dashboard():
             st.download_button('Download Grouping Report (CSV)',
                                grouping_df.to_csv(index=False),
                                'support_tiers.csv', 'text/csv')
+
+    # ── ERB vs Independent School Averages ────────────────────────────────
+    if not df.empty:
+        try:
+            conn = get_db_connection()
+            cohort_ids = df[['student_id', 'school_year']].drop_duplicates()
+            assess_q = '''
+                SELECT a.student_id, a.school_year, a.assessment_type, a.score_value,
+                       s.grade_level
+                FROM assessments a
+                JOIN students s ON a.student_id = s.student_id AND a.school_year = s.school_year
+                WHERE a.assessment_type = ANY(%s)
+            '''
+            assess_erb = pd.read_sql_query(assess_q, conn, params=[list(ERB_SUBTESTS)])
+            conn.close()
+        except Exception:
+            assess_erb = pd.DataFrame()
+
+        if not assess_erb.empty:
+            # Restrict to current cohort
+            assess_erb = assess_erb.merge(
+                cohort_ids, on=['student_id', 'school_year'], how='inner'
+            )
+        if not assess_erb.empty:
+            # Parse and aggregate by (grade_level, subtest)
+            rows = []
+            for _, row in assess_erb.iterrows():
+                parsed = parse_erb_score_value(row.get('score_value', ''))
+                if parsed.get('stanine') is not None:
+                    rows.append({
+                        'grade_level': row['grade_level'],
+                        'subtest': row['assessment_type'],
+                        'stanine': parsed['stanine'],
+                        'percentile': parsed.get('percentile') or 50,
+                    })
+            if rows:
+                erb_agg = pd.DataFrame(rows)
+                our_avg = erb_agg.groupby(['grade_level', 'subtest']).agg(
+                    our_stanine=('stanine', 'mean'),
+                    our_percentile=('percentile', 'mean'),
+                ).reset_index()
+                norm_rows = []
+                for _, r in our_avg.iterrows():
+                    norm = get_erb_independent_norm(r['grade_level'], r['subtest'])
+                    norm_rows.append({
+                        'Grade': r['grade_level'],
+                        'Subtest': ERB_SUBTEST_LABELS.get(r['subtest'], r['subtest']),
+                        'Our Avg (Stanine)': round(r['our_stanine'], 1),
+                        'Ind. Avg': norm['avg_stanine'],
+                        'Diff': round(r['our_stanine'] - norm['avg_stanine'], 1),
+                        'Our Avg (Pct)': round(r['our_percentile'], 0),
+                        'Ind. Pct': norm['avg_percentile'],
+                        'Diff Pct': round(r['our_percentile'] - norm['avg_percentile'], 0),
+                    })
+                erb_norms_df = pd.DataFrame(norm_rows)
+
+                st.markdown("")
+                st.subheader("ERB vs Independent School Averages")
+                st.caption("Comparison to ERB Independent Norm (IN): independent school students, same time of year (past 3 years).")
+
+                # Table
+                display_norms = erb_norms_df[[
+                    'Grade', 'Subtest', 'Our Avg (Stanine)', 'Ind. Avg', 'Diff',
+                    'Our Avg (Pct)', 'Ind. Pct', 'Diff Pct'
+                ]].copy()
+                display_norms['Diff'] = display_norms['Diff'].apply(lambda x: f"{x:+.1f}")
+                display_norms['Diff Pct'] = display_norms['Diff Pct'].apply(lambda x: f"{x:+.0f}")
+                st.dataframe(display_norms, width='stretch', height=280)
+
+                # Chart: Our avg vs Ind. avg by grade (stanine)
+                grade_order = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth']
+                chart_df = erb_norms_df.copy()
+                chart_df['grade_ord'] = chart_df['Grade'].apply(
+                    lambda g: grade_order.index(g) if g in grade_order else 99
+                )
+                chart_df = chart_df.sort_values('grade_ord')
+                by_grade = chart_df.groupby('Grade').agg(
+                    our_stanine=('Our Avg (Stanine)', 'mean'),
+                    ind_stanine=('Ind. Avg', 'mean'),
+                ).reset_index()
+                grades = by_grade['Grade'].tolist()
+                fig_erb = go.Figure()
+                fig_erb.add_trace(go.Bar(name='Our school avg', x=grades, y=by_grade['our_stanine'],
+                    marker_color='#5b9bd5', text=[f"{v:.1f}" for v in by_grade['our_stanine']], textposition='outside'))
+                fig_erb.add_trace(go.Bar(name='Ind. school avg', x=grades, y=by_grade['ind_stanine'],
+                    marker_color='#6c757d', opacity=0.8, text=[f"{v:.1f}" for v in by_grade['ind_stanine']], textposition='outside'))
+                fig_erb.update_layout(
+                    title='Average Stanine by Grade: Our School vs Independent Norm',
+                    barmode='group', xaxis_title='', yaxis_title='Stanine',
+                    yaxis=dict(range=[0, 9.5], dtick=1), height=360, margin=dict(t=40, b=60),
+                    legend=dict(orientation='h', y=1.08),
+                )
+                st.plotly_chart(fig_erb, width='stretch')
 
     # ── Student Roster ────────────────────────────────────────────────────
     st.markdown("")

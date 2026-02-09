@@ -26,6 +26,7 @@ ERB_SUBTESTS = [
     'ERB_Mathematics',
     'ERB_Verbal_Reasoning',
     'ERB_Quant_Reasoning',
+    'ERB_Quantitative_Reasoning',  # alias for backward compatibility
 ]
 
 ERB_SUBTEST_LABELS = {
@@ -36,6 +37,7 @@ ERB_SUBTEST_LABELS = {
     'ERB_Mathematics': 'Mathematics',
     'ERB_Verbal_Reasoning': 'Verbal Reasoning',
     'ERB_Quant_Reasoning': 'Quantitative Reasoning',
+    'ERB_Quantitative_Reasoning': 'Quantitative Reasoning',
 }
 
 ERB_SUBTEST_DESCRIPTIONS = {
@@ -76,6 +78,49 @@ STANINE_PERCENTILE_RANGES = {
     8: (90, 96),
     9: (97, 99),
 }
+
+# ---------------------------------------------------------------------------
+# ERB Independent School Norm (IN) reference
+# ---------------------------------------------------------------------------
+# ERB's Independent Norm is students from independent schools, same time of year,
+# past three years. Values here are reference averages (stanine 1-9, percentile 1-99)
+# for comparison. Update from your ERB report materials if your norm tables differ.
+# Key: grade alias (K, 1, 2, ...); value: dict of subtest -> avg_stanine, avg_percentile.
+# Missing (grade, subtest) fall back to 5.0 stanine and 50 percentile.
+
+ERB_GRADE_ALIASES = {
+    'Kindergarten': 'K', 'kindergarten': 'K', 'K': 'K', 'k': 'K',
+    'First': '1', 'first': '1', '1': '1', '1st': '1',
+    'Second': '2', 'second': '2', '2': '2', '2nd': '2',
+    'Third': '3', 'third': '3', '3': '3', '3rd': '3',
+    'Fourth': '4', 'fourth': '4', '4': '4', '4th': '4',
+    'Fifth': '5', 'fifth': '5', '5': '5', '5th': '5',
+    'Sixth': '6', 'sixth': '6', '6': '6', '6th': '6',
+}
+
+# Default: independent school average at middle of scale. Replace with ERB-published
+# or school-specific norms by (grade, subtest) if available.
+_DEFAULT_IND_NORMS = {'avg_stanine': 5.0, 'avg_percentile': 50.0}
+
+ERB_INDEPENDENT_NORMS: Dict[str, Dict[str, Dict[str, float]]] = {
+    # Example: grade '3' could override per subtest, e.g. 'ERB_Reading_Comp': {avg_stanine: 5.2, avg_percentile: 52}
+    # Leaving empty or partial uses _DEFAULT_IND_NORMS for missing keys.
+}
+
+
+def get_erb_independent_norm(grade_level: str, subtest: str) -> Dict[str, float]:
+    """Return Independent Norm (IN) reference averages for a grade and subtest.
+
+    ERB's Independent Norm = independent school students, same time of year, past 3 years.
+    Returns dict with avg_stanine and avg_percentile; missing keys use 5.0 and 50.0.
+    """
+    grade_alias = ERB_GRADE_ALIASES.get(str(grade_level).strip(), str(grade_level))
+    by_grade = ERB_INDEPENDENT_NORMS.get(grade_alias, {})
+    by_subtest = by_grade.get(subtest, _DEFAULT_IND_NORMS)
+    return {
+        'avg_stanine': float(by_subtest.get('avg_stanine', 5.0)),
+        'avg_percentile': float(by_subtest.get('avg_percentile', 50.0)),
+    }
 
 
 def classify_stanine(stanine: int) -> Optional[str]:
@@ -259,9 +304,13 @@ def parse_erb_score_value(score_value: str) -> Dict[str, Optional[float]]:
 
     for part in str(score_value).split('|'):
         part = part.strip()
-        if ':' not in part:
+        # Accept both "key:value" (canonical) and "key=value" (e.g. from imports)
+        if ':' in part:
+            key, val = part.split(':', 1)
+        elif '=' in part:
+            key, val = part.split('=', 1)
+        else:
             continue
-        key, val = part.split(':', 1)
         key = key.strip().lower()
         try:
             num = float(val.strip())

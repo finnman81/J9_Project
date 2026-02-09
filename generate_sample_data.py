@@ -149,10 +149,11 @@ print(f"3. Created {len(acad_rows)} Acadience assessment rows")
 # ---------------------------------------------------------------------------
 # 4. ERB / CTP5 subtest scores
 # ---------------------------------------------------------------------------
+# Use same subtest keys as erb_scoring.ERB_SUBTESTS (canonical format with colons)
 ERB_SUBTESTS = [
     'ERB_Reading_Comp', 'ERB_Vocabulary', 'ERB_Writing_Mechanics',
     'ERB_Writing_Concepts', 'ERB_Mathematics',
-    'ERB_Verbal_Reasoning', 'ERB_Quantitative_Reasoning',
+    'ERB_Verbal_Reasoning', 'ERB_Quant_Reasoning',
 ]
 STANINE_PCT_MID = {1: 4, 2: 11, 3: 23, 4: 40, 5: 50, 6: 60, 7: 77, 8: 89, 9: 96}
 
@@ -168,7 +169,8 @@ for _, stu in erb_students.iterrows():
         percentile = int(np.clip(pct_mid + np.random.randint(-6, 7), 1, 99))
         scale_score = int(400 + stanine * 30 + np.random.randint(-15, 16))
         growth_pct = int(np.clip(np.random.normal(50, 18), 1, 99))
-        sv = f"stanine={stanine}|percentile={percentile}|scale_score={scale_score}|growth_percentile={growth_pct}"
+        # Canonical format (colons) for erb_scoring.parse_erb_score_value
+        sv = f"stanine:{stanine}|percentile:{percentile}|scale:{scale_score}|growth:{growth_pct}"
         erb_rows.append((sid, subtest, 'Spring', '2024-25', sv, round(float(percentile), 1)))
 
 if erb_rows:

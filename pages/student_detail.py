@@ -19,7 +19,8 @@ from benchmarks import (
 )
 from erb_scoring import (
     ERB_SUBTESTS, ERB_SUBTEST_LABELS, ERB_SUBTEST_DESCRIPTIONS,
-    summarize_erb_scores, classify_stanine, stanine_color, stanine_emoji,
+    summarize_erb_scores, get_erb_independent_norm,
+    classify_stanine, stanine_color, stanine_emoji,
     classify_percentile, percentile_color,
     classify_growth_percentile, growth_percentile_color,
     erb_stanine_to_tier, get_latest_erb_tier, blend_tiers,
@@ -366,18 +367,32 @@ def show_student_detail():
     if erb_summaries:
         st.markdown("")
         st.subheader("ERB / CTP5 Scores")
-        st.caption("Norm-referenced scores from the Comprehensive Testing Program (CTP5)")
+        st.caption("Norm-referenced scores from the Comprehensive Testing Program (CTP5). "
+                   "Comparison to ERB Independent Norm (IN): independent school averages, same time of year.")
 
         erb_latest = {}
         for s in erb_summaries:
             erb_latest[s['subtest']] = s
 
-        # Compact summary table (always visible)
+        # Compact summary table with Independent Norm comparison
         erb_tbl_rows = []
         for s in erb_summaries:
+            grade_level = s.get('grade_level') or (latest_score.get('grade_level') if latest_score else '')
+            norm = get_erb_independent_norm(grade_level, s['subtest'])
+            ind_stanine = norm['avg_stanine']
+            ind_pct = norm['avg_percentile']
+            stu_stanine = s['stanine']
+            stu_pct = s.get('percentile')
+            diff_s = (stu_stanine - ind_stanine) if stu_stanine is not None else None
+            diff_p = (stu_pct - ind_pct) if stu_pct is not None else None
+            vs_ind = '--'
+            if diff_s is not None:
+                vs_ind = f"{diff_s:+.1f}" if diff_s != 0 else "At"
             erb_tbl_rows.append({
                 'Subtest': s['label'],
                 'Stanine': f"{stanine_emoji(s['stanine'])} {s['stanine']}" if s['stanine'] else '--',
+                'Ind. Avg': f"{ind_stanine:.1f}",
+                'vs Ind. Avg': vs_ind,
                 'Percentile': f"{int(s['percentile'])}th" if s['percentile'] else '--',
                 'Growth %ile': f"{int(s['growth_percentile'])}" if s['growth_percentile'] else '--',
                 'Tier': s['tier'],
@@ -386,16 +401,23 @@ def show_student_detail():
         st.markdown(_render_colored_table(erb_tbl, {'Tier': _TIER_BG}, max_height=280),
                     unsafe_allow_html=True)
 
-        # Charts in expander
+        # Charts in expander (with Independent Norm reference)
         with st.expander("ERB Charts", expanded=False):
             ec1, ec2 = st.columns(2)
             with ec1:
                 labels = [erb_latest[k]['label'] for k in erb_latest]
                 stanines = [erb_latest[k]['stanine'] or 0 for k in erb_latest]
+                # Independent norm ref (use first summary's grade for single ref line)
+                ref_grade = erb_summaries[0].get('grade_level') if erb_summaries else ''
+                ref_subtest = erb_summaries[0]['subtest'] if erb_summaries else ''
+                ind_norm = get_erb_independent_norm(ref_grade, ref_subtest)
+                ind_stanine_line = ind_norm['avg_stanine']
                 fig_s = go.Figure()
                 fig_s.add_trace(go.Bar(x=labels, y=stanines,
                     marker_color=[stanine_color(s) for s in stanines],
-                    text=[str(s) for s in stanines], textposition='auto'))
+                    text=[str(s) for s in stanines], textposition='auto', name='Student'))
+                fig_s.add_hline(y=ind_stanine_line, line_dash="dash", line_color="#6c757d",
+                                annotation_text="Ind. school avg", annotation_position="right")
                 fig_s.add_hrect(y0=0, y1=3.5, fillcolor="#dc3545", opacity=0.06, line_width=0)
                 fig_s.add_hrect(y0=3.5, y1=6.5, fillcolor="#ffc107", opacity=0.06, line_width=0)
                 fig_s.add_hrect(y0=6.5, y1=9.5, fillcolor="#28a745", opacity=0.06, line_width=0)
@@ -405,12 +427,13 @@ def show_student_detail():
 
             with ec2:
                 pcts = [erb_latest[k].get('percentile') or 0 for k in erb_latest]
+                ind_pct_line = ind_norm['avg_percentile']
                 fig_p = go.Figure()
                 fig_p.add_trace(go.Bar(x=labels, y=pcts,
                     marker_color=[percentile_color(p) for p in pcts],
-                    text=[f"{int(p)}th" for p in pcts], textposition='auto'))
-                fig_p.add_hline(y=50, line_dash="dash", line_color="#999",
-                                annotation_text="50th %ile", annotation_position="right")
+                    text=[f"{int(p)}th" for p in pcts], textposition='auto', name='Student'))
+                fig_p.add_hline(y=ind_pct_line, line_dash="dash", line_color="#6c757d",
+                                annotation_text="Ind. school avg", annotation_position="right")
                 fig_p.update_layout(title='Percentile Ranks', yaxis=dict(range=[0, 100]),
                                     height=320, xaxis=dict(tickangle=30), margin=dict(t=40, b=60))
                 st.plotly_chart(fig_p, width='stretch')
