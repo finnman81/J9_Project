@@ -395,16 +395,26 @@ def group_students(students_df: pd.DataFrame, scores_df: pd.DataFrame,
         score = latest.get(measure) if measure in latest.index else latest.get('overall_literacy_score')
         period = latest.get('assessment_period', 'EOY')
 
-        # Try Acadience benchmark first, fall back to internal thresholds
-        status = get_benchmark_status(measure, grade, period, score)
-        if status is None and score is not None:
-            # Use internal literacy score thresholds
+        # When score is the app's overall_literacy_score (0-100), use internal thresholds only.
+        # Raw Acadience measures (ORF, Composite, etc.) use different scales; comparing
+        # 0-100 to them would wrongly mark high scorers as Well Below (e.g. 97 vs Composite 180).
+        if measure not in latest.index and score is not None:
+            # Internal 0-100 scale only
             if score >= 70:
                 status = 'At Benchmark'
             elif score >= 50:
                 status = 'Below Benchmark'
             else:
                 status = 'Well Below Benchmark'
+        else:
+            status = get_benchmark_status(measure, grade, period, score)
+            if status is None and score is not None:
+                if score >= 70:
+                    status = 'At Benchmark'
+                elif score >= 50:
+                    status = 'Below Benchmark'
+                else:
+                    status = 'Well Below Benchmark'
 
         support = get_support_level(status)
 
