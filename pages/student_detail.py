@@ -258,8 +258,23 @@ def show_student_detail():
     # ── Progress Chart + Strengths/Weaknesses ─────────────────────────────
     st.markdown("")
     if not all_scores_df.empty:
-        scores_df = all_scores_df.copy()
+        # One point per (grade, period): keep latest school_year to avoid duplicate x and two lines
+        pk = {'Fall': 1, 'Winter': 2, 'Spring': 3, 'EOY': 4}
+        dedupe_df = all_scores_df.copy()
+        dedupe_df['_yk'] = dedupe_df['school_year'].apply(
+            lambda v: int(str(v).split('-')[0]) if str(v).split('-')[0].isdigit() else 0
+        )
+        dedupe_df['_pk'] = dedupe_df['assessment_period'].map(pk).fillna(0)
+        dedupe_df = dedupe_df.sort_values(['_yk', '_pk', 'calculated_at'])
+        scores_df = dedupe_df.drop_duplicates(
+            subset=['grade_level', 'assessment_period'], keep='last'
+        ).reset_index(drop=True)
         scores_df['period_label'] = scores_df['grade_level'] + ' - ' + scores_df['assessment_period']
+        grade_order = ['Kindergarten', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth']
+        scores_df['_gord'] = scores_df['grade_level'].apply(
+            lambda g: grade_order.index(g) if g in grade_order else 99
+        )
+        scores_df = scores_df.sort_values(['_gord', '_pk']).reset_index(drop=True)
 
         ch1, ch2 = st.columns([3, 2])
         with ch1:
@@ -305,16 +320,24 @@ def show_student_detail():
 
             if areas:
                 sorted_areas = sorted(areas.items(), key=lambda x: x[1], reverse=True)
-                strengths = sorted_areas[:2]
-                growth = sorted_areas[-2:]
+                # Strengths = scores at or above 60; growth = below 60 (avoid labeling low scores as strengths)
+                strengths = [(n, s) for n, s in sorted_areas if s >= 60][:2]
+                growth = [(n, s) for n, s in sorted_areas if s < 60]
+                growth = sorted(growth, key=lambda x: x[1])[:2] if growth else []
 
                 st.markdown("**Top Strengths**")
-                for name, score in strengths:
-                    st.markdown(f"&nbsp;&nbsp; ✅ **{name}** — {score:.0f}")
+                if strengths:
+                    for name, score in strengths:
+                        st.markdown(f"&nbsp;&nbsp; ✅ **{name}** — {score:.0f}")
+                else:
+                    st.caption("No areas at benchmark yet.")
 
                 st.markdown("**Areas for Growth**")
-                for name, score in growth:
-                    st.markdown(f"&nbsp;&nbsp; 🔶 **{name}** — {score:.0f}")
+                if growth:
+                    for name, score in growth:
+                        st.markdown(f"&nbsp;&nbsp; 🔶 **{name}** — {score:.0f}")
+                else:
+                    st.caption("No areas below benchmark.")
 
                 if support_tier and 'Intensive' in support_tier and growth:
                     st.info(f"Recommendation: Focus intervention on **{growth[0][0]}** (lowest at {growth[0][1]:.0f})")
@@ -441,20 +464,19 @@ def show_student_detail():
     # ── Growth & Component Analysis (expander) ────────────────────────────
     st.markdown("")
     with st.expander("Growth & Component Analysis", expanded=False):
-        # Growth rate table
+        # Growth rate: within (grade, school_year) only so we get Fall->Winter->Spring, never Fall->Fall
         if not all_scores_df.empty and len(all_scores_df) >= 2:
             p_order = {'Fall': 1, 'Winter': 2, 'Spring': 3, 'EOY': 4}
             g_rows = []
-            for gv in all_scores_df['grade_level'].unique():
-                gs = all_scores_df[all_scores_df['grade_level'] == gv].copy()
+            for (gv, sy), grp in all_scores_df.groupby(['grade_level', 'school_year']):
+                gs = grp.copy()
                 gs['po'] = gs['assessment_period'].map(p_order).fillna(0)
-                gs = gs.sort_values('po')
+                gs = gs.sort_values('po').drop_duplicates(subset=['assessment_period'], keep='last')
                 for i in range(1, len(gs)):
                     prev, curr = gs.iloc[i - 1], gs.iloc[i]
                     ps, cs = prev.get('overall_literacy_score'), curr.get('overall_literacy_score')
                     if ps is not None and cs is not None and pd.notna(ps) and pd.notna(cs):
                         growth = cs - ps
-                        # Internal growth labels for normalized 0-100 scores
                         if growth >= 10:
                             rate = 'Strong Growth'
                         elif growth >= 3:
@@ -465,6 +487,7 @@ def show_student_detail():
                             rate = 'Decline'
                         g_rows.append({
                             'Grade': gv,
+                            'Year': str(sy),
                             'From': prev['assessment_period'],
                             'To': curr['assessment_period'],
                             'Start': f"{ps:.0f}", 'End': f"{cs:.0f}",
@@ -477,16 +500,30 @@ def show_student_detail():
                 st.markdown(_render_colored_table(gdf, {'Rate': _GROWTH_BG}, max_height=240),
                             unsafe_allow_html=True)
 
-        # Component scores over time
+        # Component scores over time (same dedupe: one point per grade-period)
         if not all_scores_df.empty and len(all_scores_df) > 1:
-            scores_df = all_scores_df.copy()
-            scores_df['period_label'] = scores_df['grade_level'] + ' - ' + scores_df['assessment_period']
+            pk = {'Fall': 1, 'Winter': 2, 'Spring': 3, 'EOY': 4}
+            comp_df = all_scores_df.copy()
+            comp_df['_yk'] = comp_df['school_year'].apply(
+                lambda v: int(str(v).split('-')[0]) if str(v).split('-')[0].isdigit() else 0
+            )
+            comp_df['_pk'] = comp_df['assessment_period'].map(pk).fillna(0)
+            comp_df = comp_df.sort_values(['_yk', '_pk', 'calculated_at'])
+            comp_df = comp_df.drop_duplicates(
+                subset=['grade_level', 'assessment_period'], keep='last'
+            ).reset_index(drop=True)
+            comp_df['period_label'] = comp_df['grade_level'] + ' - ' + comp_df['assessment_period']
+            grade_order = ['Kindergarten', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth']
+            comp_df['_gord'] = comp_df['grade_level'].apply(
+                lambda g: grade_order.index(g) if g in grade_order else 99
+            )
+            comp_df = comp_df.sort_values(['_gord', '_pk']).reset_index(drop=True)
             fig_c = go.Figure()
             for col, name, color in [('reading_component', 'Reading', '#5b9bd5'),
                                       ('phonics_component', 'Phonics', '#28a745'),
                                       ('sight_words_component', 'Sight Words', '#e67e22')]:
-                if scores_df[col].notna().any():
-                    fig_c.add_trace(go.Scatter(x=scores_df['period_label'], y=scores_df[col],
+                if comp_df[col].notna().any():
+                    fig_c.add_trace(go.Scatter(x=comp_df['period_label'], y=comp_df[col],
                         mode='lines+markers', name=name, line=dict(color=color, width=2)))
             fig_c.update_layout(title='Component Scores Over Time', yaxis=dict(range=[0, 100]),
                                 height=320, xaxis=dict(tickangle=45), margin=dict(t=40, b=60),
