@@ -268,6 +268,45 @@ def get_support_level(benchmark_status: Optional[str]) -> str:
     return 'Unknown'
 
 
+def blend_dashboard_tiers(literacy_tier: str, erb_tier: str) -> str:
+    """Softer blending of literacy and ERB tiers for the overview dashboard.
+
+    literacy_tier comes from the app's 0-100 composite (Core/Strategic/Intensive),
+    erb_tier comes from average ERB stanine (Core/Strategic/Intensive/Unknown).
+
+    Rules:
+      - If literacy is Intensive → keep Intensive regardless of ERB.
+      - If literacy is Strategic:
+          - ERB Intensive → Intensive
+          - otherwise → Strategic
+      - If literacy is Core:
+          - ERB Core/Unknown → Core
+          - ERB Strategic/Intensive → at most Strategic (do not jump to Intensive)
+      - If literacy is Unknown → fall back to ERB tier.
+    """
+    l = (literacy_tier or 'Unknown').strip()
+    e = (erb_tier or 'Unknown').strip()
+
+    if l == 'Intensive (Tier 3)':
+        return 'Intensive (Tier 3)'
+
+    if l == 'Strategic (Tier 2)':
+        if e == 'Intensive (Tier 3)':
+            return 'Intensive (Tier 3)'
+        return 'Strategic (Tier 2)'
+
+    if l == 'Core (Tier 1)':
+        if e in ('Core (Tier 1)', 'Unknown', 'N/A', ''):
+            return 'Core (Tier 1)'
+        # ERB indicates some concern: nudge to Strategic but not Intensive.
+        return 'Strategic (Tier 2)'
+
+    # Literacy tier unknown: use ERB tier if available.
+    if e in ('Core (Tier 1)', 'Strategic (Tier 2)', 'Intensive (Tier 3)'):
+        return e
+    return 'Unknown'
+
+
 def classify_growth(measure: str, grade, from_period, to_period,
                     actual_growth: float) -> Optional[str]:
     """Classify growth rate relative to typical peers.

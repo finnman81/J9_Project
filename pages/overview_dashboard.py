@@ -10,11 +10,11 @@ from database import get_all_students, get_db_connection
 from calculations import determine_risk_level
 from benchmarks import (
     get_benchmark_status, get_support_level, benchmark_color,
-    benchmark_emoji, group_students,
+    benchmark_emoji, group_students, blend_dashboard_tiers,
 )
 from erb_scoring import (
     ERB_SUBTESTS, ERB_SUBTEST_LABELS, summarize_erb_scores,
-    get_latest_erb_tier, blend_tiers, get_erb_independent_norm,
+    erb_stanine_to_tier, get_erb_independent_norm,
     parse_erb_score_value,
 )
 
@@ -322,16 +322,17 @@ def show_overview_dashboard():
                     sa = all_assess_df[all_assess_df['student_name'] == sname]
                     erb_sums = summarize_erb_scores(sa, sname)
                     if erb_sums:
-                        erb_tier_map[sname] = get_latest_erb_tier(erb_sums)
                         stans = [s['stanine'] for s in erb_sums if s.get('stanine')]
                         if stans:
-                            erb_stanine_map[sname] = round(sum(stans) / len(stans), 1)
+                            avg_stan = round(sum(stans) / len(stans), 1)
+                            erb_stanine_map[sname] = avg_stan
+                            erb_tier_map[sname] = erb_stanine_to_tier(avg_stan)
 
             if erb_tier_map:
                 grouping_df['erb_tier'] = grouping_df['student_name'].map(erb_tier_map).fillna('Unknown')
                 grouping_df['erb_avg_stanine'] = grouping_df['student_name'].map(erb_stanine_map)
                 grouping_df['blended_tier'] = grouping_df.apply(
-                    lambda r: blend_tiers(r['support_level'], r['erb_tier']), axis=1)
+                    lambda r: blend_dashboard_tiers(r['support_level'], r['erb_tier']), axis=1)
             else:
                 grouping_df['erb_tier'] = 'N/A'
                 grouping_df['erb_avg_stanine'] = None
