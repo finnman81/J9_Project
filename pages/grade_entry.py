@@ -5,14 +5,16 @@ Supports both single student and bulk entry modes
 """
 import streamlit as st
 import pandas as pd
-from database import (
+from core.database import (
     get_all_students, create_student, add_assessment, add_intervention,
     get_student_id, get_db_connection
 )
-from calculations import process_assessment_score
-from utils import recalculate_literacy_scores
-from benchmarks import get_benchmark_status, benchmark_emoji, get_support_level
-from erb_scoring import (
+from core.calculations import process_assessment_score
+from core.math_calculations import process_math_assessment_score
+from core.utils import recalculate_literacy_scores, recalculate_math_scores
+from core.benchmarks import get_benchmark_status, benchmark_emoji, get_support_level
+from core.math_benchmarks import get_math_benchmark_status, math_benchmark_emoji, get_math_support_level
+from core.erb_scoring import (
     ERB_SUBTESTS, ERB_SUBTEST_LABELS, classify_stanine, stanine_emoji,
     erb_stanine_to_tier, build_erb_score_value,
 )
@@ -154,15 +156,24 @@ def show_single_entry_form():
         
         student_id = None
     
+    # Subject Selection
+    st.markdown("### Subject Area")
+    subject_area = st.radio(
+        "Subject *",
+        ["Reading", "Math"],
+        horizontal=True,
+        key="subject_area_select"
+    )
+    
     # Assessment Information
     st.markdown("### Assessment Information")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        assessment_type = st.selectbox(
-            "Assessment Type *",
-            [
+        # Filter assessment types based on subject
+        if subject_area == "Reading":
+            assessment_types = [
                 "Reading_Level",
                 "Sight_Words",
                 "Spelling",
@@ -183,10 +194,26 @@ def show_single_entry_form():
                 "ERB_Vocabulary",
                 "ERB_Writing_Mechanics",
                 "ERB_Writing_Concepts",
-                "ERB_Mathematics",
                 "ERB_Verbal_Reasoning",
                 "ERB_Quant_Reasoning",
             ]
+        else:  # Math
+            assessment_types = [
+                "--- Acadience Math Measures ---",
+                "NIF",
+                "NNF",
+                "AQD",
+                "MNF",
+                "Math_Computation",
+                "Math_Concepts_Application",
+                "Math_Composite",
+                "--- ERB / CTP5 ---",
+                "ERB_Mathematics",
+            ]
+        
+        assessment_type = st.selectbox(
+            "Assessment Type *",
+            assessment_types
         )
         # Warn if separator selected
         if assessment_type.startswith("---"):
@@ -270,6 +297,35 @@ def show_single_entry_form():
                 st.info(f"{icon} **{bm_st}** — {support}")
             else:
                 st.caption("No Acadience benchmark data for this measure/grade/period combination.")
+
+    elif subject_area == "Math" and assessment_type in ["NIF", "NNF", "AQD", "MNF", "Math_Computation", 
+                                                          "Math_Concepts_Application", "Math_Composite"]:
+        # Math assessment types
+        math_labels = {
+            'NIF': 'Number Identification Fluency',
+            'NNF': 'Next Number Fluency',
+            'AQD': 'Advanced Quantity Discrimination',
+            'MNF': 'Missing Number Fluency',
+            'Math_Computation': 'Computation',
+            'Math_Concepts_Application': 'Concepts & Application',
+            'Math_Composite': 'Math Composite Score',
+        }
+        raw_score = st.number_input(
+            f"{math_labels.get(assessment_type, assessment_type)}",
+            min_value=0, value=0, step=1
+        )
+        score_value = str(raw_score)
+        score_normalized = process_math_assessment_score(assessment_type, score_value, grade_level, assessment_period)
+        
+        # Live benchmark preview for math
+        if raw_score > 0 and grade_level and assessment_period:
+            bm_st = get_math_benchmark_status(assessment_type, grade_level, assessment_period, raw_score)
+            if bm_st:
+                icon = math_benchmark_emoji(bm_st)
+                support = get_math_support_level(bm_st)
+                st.info(f"{icon} **{bm_st}** — {support}")
+            else:
+                st.caption("No Acadience Math benchmark data for this measure/grade/period combination.")
 
     elif assessment_type in ERB_SUBTESTS:
         subtest_label = ERB_SUBTEST_LABELS.get(assessment_type, assessment_type)
@@ -430,7 +486,8 @@ def show_single_entry_form():
                     concerns=concerns if concerns else None,
                     entered_by=entered_by,
                     needs_review=needs_review,
-                    is_draft=save_as_draft
+                    is_draft=save_as_draft,
+                    subject_area=subject_area
                 )
                 
                 # Add intervention if specified
@@ -446,8 +503,11 @@ def show_single_entry_form():
                         notes=intervention_notes
                     )
                 
-                # Recalculate literacy scores
-                recalculate_literacy_scores(student_id=student_id)
+                # Recalculate scores based on subject
+                if subject_area == "Reading":
+                    recalculate_literacy_scores(student_id=student_id)
+                else:
+                    recalculate_math_scores(student_id=student_id)
                 
                 st.success("Assessment saved successfully!")
                 st.rerun()
@@ -509,7 +569,8 @@ def show_single_entry_form():
                     concerns=concerns if concerns else None,
                     entered_by=entered_by,
                     needs_review=needs_review,
-                    is_draft=save_as_draft
+                    is_draft=save_as_draft,
+                    subject_area=subject_area
                 )
 
                 # Add intervention if specified
@@ -525,8 +586,9 @@ def show_single_entry_form():
                         notes=intervention_notes
                     )
 
-                # Recalculate literacy scores
+                # Recalculate scores (both subjects to ensure consistency)
                 recalculate_literacy_scores(student_id=student_id)
+                recalculate_math_scores(student_id=student_id)
                 st.success("Assessment saved successfully! Enter another one below.")
             else:
                 st.error("Please select or create a student first")
@@ -585,9 +647,15 @@ def show_bulk_entry_form():
                     sid = create_student(str(row.get('Student_Name')).strip(), str(row.get('Grade_Level')).strip(), str(row.get('Class_Name','')).strip() or None, str(row.get('Teacher_Name','')).strip() or None, grid_school_year)
                 raw_score = str(row.get('Score_Value','')).strip()
                 norm = process_assessment_score(str(row.get('Assessment_Type')).strip(), raw_score) if raw_score else None
+                # Determine subject_area from assessment type
+                assessment_type_str = str(row.get('Assessment_Type', '')).strip()
+                math_types = ['NIF', 'NNF', 'AQD', 'MNF', 'Math_Computation', 'Math_Concepts_Application', 
+                             'Computation', 'Concepts_Application', 'Concepts & Application', 'Math_Composite']
+                subject_area_val = 'Math' if assessment_type_str in math_types else 'Reading'
+                
                 add_assessment(
                     student_id=sid,
-                    assessment_type=str(row.get('Assessment_Type')).strip(),
+                    assessment_type=assessment_type_str,
                     assessment_period=str(row.get('Assessment_Period')).strip(),
                     school_year=grid_school_year,
                     score_value=raw_score or None,
@@ -596,13 +664,15 @@ def show_bulk_entry_form():
                     concerns=str(row.get('Concerns','')).strip() or None,
                     entered_by='Teacher',
                     needs_review=bool(row.get('Needs_Review', False)),
-                    is_draft=bool(row.get('Save_Draft', False))
+                    is_draft=bool(row.get('Save_Draft', False)),
+                    subject_area=subject_area_val
                 )
                 grid_saved += 1
             except Exception:
                 grid_errors += 1
         if grid_saved:
             recalculate_literacy_scores()
+            recalculate_math_scores()
         st.success(f'Grid saved: {grid_saved} entries')
         if grid_errors:
             st.warning(f'Grid errors: {grid_errors}')
@@ -700,6 +770,11 @@ def show_bulk_entry_form():
                             if assessment_type and assessment_period:
                                 score_normalized = process_assessment_score(assessment_type, score_value) if score_value else None
                                 
+                                # Determine subject_area from assessment type
+                                math_types = ['NIF', 'NNF', 'AQD', 'MNF', 'Math_Computation', 'Math_Concepts_Application', 
+                                             'Computation', 'Concepts_Application', 'Concepts & Application', 'Math_Composite']
+                                subject_area_val = 'Math' if assessment_type in math_types else 'Reading'
+                                
                                 add_assessment(
                                     student_id=student_id,
                                     assessment_type=assessment_type,
@@ -711,6 +786,7 @@ def show_bulk_entry_form():
                                     notes=notes,
                                     concerns=concerns,
                                     entered_by=default_entered_by,
+                                    subject_area=subject_area_val,
                                     needs_review=bool(row.get("Needs_Review", False)),
                                     is_draft=bool(row.get("Save_Draft", False))
                                 )
@@ -723,9 +799,10 @@ def show_bulk_entry_form():
                         error_count += 1
                         st.warning(f"Error processing row {idx + 1}: {str(e)}")
                 
-                # Recalculate literacy scores for all affected students
+                # Recalculate scores for all affected students (both subjects)
                 if saved_count > 0:
                     recalculate_literacy_scores()
+                    recalculate_math_scores()
                 
                 st.success(f"Saved {saved_count} entries successfully!")
                 if error_count > 0:

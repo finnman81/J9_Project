@@ -19,12 +19,12 @@ pip install -r requirements.txt
 
 2. Initialize the database:
 ```bash
-python database.py
+python -c "from core.database import init_database; init_database()"
 ```
 
 3. Migrate existing data (optional):
 ```bash
-python migrate_data.py
+python scripts/migrate_data.py
 ```
 
 ## Running the Application

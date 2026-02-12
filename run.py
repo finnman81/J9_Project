@@ -12,7 +12,7 @@ def main():
     
     # Initialize database schema (safe to call repeatedly)
     print("\nEnsuring database schema is up to date...")
-    from database import init_database
+    from core.database import init_database
     init_database()
     print("✓ Database ready")
     

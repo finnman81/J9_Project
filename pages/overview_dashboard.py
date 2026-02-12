@@ -6,13 +6,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from database import get_all_students, get_db_connection
-from calculations import determine_risk_level
-from benchmarks import (
+from core.database import get_all_students, get_db_connection
+from core.calculations import determine_risk_level
+from core.benchmarks import (
     get_benchmark_status, get_support_level, benchmark_color,
     benchmark_emoji, group_students, blend_dashboard_tiers,
 )
-from erb_scoring import (
+from core.erb_scoring import (
     ERB_SUBTESTS, ERB_SUBTEST_LABELS, summarize_erb_scores,
     erb_stanine_to_tier, get_erb_independent_norm,
     parse_erb_score_value,

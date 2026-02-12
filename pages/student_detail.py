@@ -6,18 +6,18 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from database import (
+from core.database import (
     get_all_students, get_db_connection, add_teacher_note, get_teacher_notes,
     upsert_student_goal, get_student_goals
 )
-from calculations import calculate_component_scores, calculate_trend
-from benchmarks import (
+from core.calculations import calculate_component_scores, calculate_trend
+from core.benchmarks import (
     get_benchmark_status, get_support_level,
     benchmark_color, benchmark_emoji,
     generate_parent_report_html, MEASURE_LABELS,
     MEASURES_BY_GRADE, GRADE_ALIASES, PERIOD_MAP,
 )
-from erb_scoring import (
+from core.erb_scoring import (
     ERB_SUBTESTS, ERB_SUBTEST_LABELS, ERB_SUBTEST_DESCRIPTIONS,
     summarize_erb_scores, get_erb_independent_norm,
     classify_stanine, stanine_color, stanine_emoji,
