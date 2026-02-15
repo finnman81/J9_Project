@@ -123,7 +123,7 @@ def _render_colored_table(df: pd.DataFrame, color_cols: dict, max_height: int = 
 # ---------------------------------------------------------------------------
 
 def show_overview_dashboard():
-    st.title("Literacy Dashboard")
+    st.title("📚 Literacy Dashboard")
 
     # ── Filters ───────────────────────────────────────────────────────────
     students_df = get_all_students()
@@ -279,7 +279,7 @@ def show_overview_dashboard():
 
     # ── Priority Students Panel ───────────────────────────────────────────
     st.markdown("")
-    st.subheader("Priority Students")
+    st.subheader("🎯 Priority Students")
     st.caption("Students automatically surfaced based on tier, intervention gaps, declining trends, and assessment staleness.")
 
     priority_df = compute_priority_students(
@@ -328,7 +328,7 @@ def show_overview_dashboard():
 
     # ── Period-Aware Growth Metrics ───────────────────────────────────────
     st.markdown("")
-    st.subheader("Growth Metrics")
+    st.subheader("📈 Growth Metrics")
     gp1, gp2 = st.columns([1, 3])
     with gp1:
         growth_period = st.selectbox("Growth Period", ["Fall → Winter", "Winter → Spring", "Fall → Spring"],
@@ -407,7 +407,7 @@ def show_overview_dashboard():
 
     # ── Support Tiers ─────────────────────────────────────────────────────
     st.markdown("")
-    st.subheader("Support Tiers")
+    st.subheader("📊 Support Tiers")
     st.caption("Students are grouped into tiers based on benchmark performance. "
                "Core = on track, Strategic = needs targeted help, Intensive = needs significant intervention.")
 
@@ -550,7 +550,7 @@ def show_overview_dashboard():
                 erb_norms_df = pd.DataFrame(norm_rows)
 
                 st.markdown("")
-                st.subheader("ERB vs Independent School Averages")
+                st.subheader("📗 ERB vs Independent School Averages")
                 st.caption("Comparison to ERB Independent Norm (IN): independent school students, same time of year (past 3 years).")
 
                 # Table
@@ -589,7 +589,7 @@ def show_overview_dashboard():
 
     # ── Student Roster ────────────────────────────────────────────────────
     st.markdown("")
-    st.subheader("Student Roster")
+    st.subheader("📋 Student Roster")
 
     if not df.empty:
         roster = df[['student_name', 'grade_level', 'class_name', 'teacher_name',
@@ -614,7 +614,7 @@ def show_overview_dashboard():
 
     # ── Detailed Analytics (collapsible) ──────────────────────────────────
     st.markdown("")
-    with st.expander("Detailed Analytics", expanded=False):
+    with st.expander("📉 Detailed Analytics", expanded=False):
 
         da1, da2 = st.columns(2)
 
@@ -726,8 +726,9 @@ def show_overview_dashboard():
             )
             st.plotly_chart(fig, width='stretch')
 
-    # ── Data Health Panel ─────────────────────────────────────────────────
-    with st.expander("Data Health", expanded=False):
+    # ── Data Health Panel (at bottom) ─────────────────────────────────────
+    st.markdown("")
+    with st.expander("🔍 Data Health", expanded=False):
         dq1, dq2, dq3 = st.columns(3)
         latest_update = pd.to_datetime(df['calculated_at'], errors='coerce').max() if not df.empty else None
         with dq1:

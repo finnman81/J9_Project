@@ -118,7 +118,7 @@ def _render_colored_table(df: pd.DataFrame, color_cols: dict, max_height: int = 
 # ---------------------------------------------------------------------------
 
 def show_math_overview_dashboard():
-    st.title("Math Dashboard")
+    st.title("🔢 Math Dashboard")
 
     # ── Filters ───────────────────────────────────────────────────────────
     students_df = get_all_students()
@@ -272,7 +272,7 @@ def show_math_overview_dashboard():
 
     # ── Priority Students Panel ───────────────────────────────────────────
     st.markdown("")
-    st.subheader("Priority Students")
+    st.subheader("🎯 Priority Students")
     st.caption("Students automatically surfaced based on tier, intervention gaps, declining trends, and assessment staleness.")
 
     priority_df = compute_priority_students(
@@ -306,7 +306,7 @@ def show_math_overview_dashboard():
 
     # ── Period-Aware Growth Metrics ───────────────────────────────────────
     st.markdown("")
-    st.subheader("Growth Metrics")
+    st.subheader("📈 Growth Metrics")
     gp1, gp2 = st.columns([1, 3])
     with gp1:
         growth_period = st.selectbox("Growth Period", ["Fall → Winter", "Winter → Spring", "Fall → Spring"],
@@ -328,40 +328,6 @@ def show_math_overview_dashboard():
             st.metric("% Declining", f"{summary['pct_declining']:.0f}%")
         with gm4:
             st.metric("Students w/ Growth Data", summary['n'])
-
-    # ── Data Health Panel (expanded by default for Math) ──────────────────
-    with st.expander("Data Health", expanded=True):
-        dq1, dq2, dq3 = st.columns(3)
-        with dq1:
-            st.metric("Students Assessed", f"{health['assessed_count']} of {health['total_students']}")
-            st.metric("Assessment Coverage", f"{health['assessed_pct']:.0f}%")
-            st.metric("Missing Scores", health['missing_scores_count'])
-        with dq2:
-            st.metric("Invalid Range Scores", health['invalid_range_count'])
-            st.metric("Duplicate Assessments", health['duplicate_count'])
-            st.metric("NULL-vs-Zero Issues", health['null_vs_zero_issues'],
-                      help="Assessments where normalized score is 0 but raw score is empty/null. "
-                           "Math data is especially susceptible to this distortion.")
-        with dq3:
-            st.metric("Median Days Since Assessment",
-                      f"{health['median_days_since_assessment']:.0f}" if health['median_days_since_assessment'] is not None else "N/A")
-            st.metric(f"% Overdue (>{health['overdue_threshold_days']}d)", f"{health['pct_overdue']:.0f}%")
-
-        if health['missing_scores_students']:
-            st.markdown("**Students Missing Scores:**")
-            st.caption(", ".join(health['missing_scores_students'][:30])
-                       + ("..." if len(health['missing_scores_students']) > 30 else ""))
-
-        # Math-specific: NULL vs 0 score separation
-        if not df.empty and 'overall_math_score' in df.columns:
-            zero_scores = int((df['overall_math_score'] == 0).sum())
-            no_scores = int(df['overall_math_score'].isna().sum())
-            if zero_scores > 0 or no_scores > 0:
-                st.warning(
-                    f"**Score = 0 vs No Score:** {zero_scores} students have a score of 0. "
-                    f"{no_scores} students have no score recorded. "
-                    f"Ensure zero scores represent actual performance, not missing data."
-                )
 
     # ── Charts (two-column) ───────────────────────────────────────────────
     st.markdown("")
@@ -419,7 +385,7 @@ def show_math_overview_dashboard():
 
     # ── Support Tiers ─────────────────────────────────────────────────────
     st.markdown("")
-    st.subheader("Support Tiers")
+    st.subheader("📊 Support Tiers")
     st.caption("Students are grouped into tiers based on benchmark performance. "
                "Core = on track, Strategic = needs targeted help, Intensive = needs significant intervention.")
 
@@ -515,7 +481,7 @@ def show_math_overview_dashboard():
                 erb_norms_df = pd.DataFrame(norm_rows)
 
                 st.markdown("")
-                st.subheader("ERB Math vs Independent School Averages")
+                st.subheader("📗 ERB Math vs Independent School Averages")
                 st.caption("Comparison to ERB Independent Norm (IN): independent school students, same time of year.")
 
                 display_norms = erb_norms_df[[
@@ -528,7 +494,7 @@ def show_math_overview_dashboard():
 
     # ── Student Roster ────────────────────────────────────────────────────
     st.markdown("")
-    st.subheader("Student Roster")
+    st.subheader("📋 Student Roster")
 
     if not df.empty:
         roster = df[['student_name', 'grade_level', 'class_name', 'teacher_name',
@@ -550,3 +516,38 @@ def show_math_overview_dashboard():
                            'text/csv')
     else:
         st.info("No students found with the selected filters.")
+
+    # ── Data Health Panel (at bottom) ─────────────────────────────────────
+    st.markdown("")
+    with st.expander("🔍 Data Health", expanded=False):
+        dq1, dq2, dq3 = st.columns(3)
+        with dq1:
+            st.metric("Students Assessed", f"{health['assessed_count']} of {health['total_students']}")
+            st.metric("Assessment Coverage", f"{health['assessed_pct']:.0f}%")
+            st.metric("Missing Scores", health['missing_scores_count'])
+        with dq2:
+            st.metric("Invalid Range Scores", health['invalid_range_count'])
+            st.metric("Duplicate Assessments", health['duplicate_count'])
+            st.metric("NULL-vs-Zero Issues", health['null_vs_zero_issues'],
+                      help="Assessments where normalized score is 0 but raw score is empty/null. "
+                           "Math data is especially susceptible to this distortion.")
+        with dq3:
+            st.metric("Median Days Since Assessment",
+                      f"{health['median_days_since_assessment']:.0f}" if health['median_days_since_assessment'] is not None else "N/A")
+            st.metric(f"% Overdue (>{health['overdue_threshold_days']}d)", f"{health['pct_overdue']:.0f}%")
+
+        if health['missing_scores_students']:
+            st.markdown("**Students Missing Scores:**")
+            st.caption(", ".join(health['missing_scores_students'][:30])
+                       + ("..." if len(health['missing_scores_students']) > 30 else ""))
+
+        # Math-specific: NULL vs 0 score separation
+        if not df.empty and 'overall_math_score' in df.columns:
+            zero_scores = int((df['overall_math_score'] == 0).sum())
+            no_scores = int(df['overall_math_score'].isna().sum())
+            if zero_scores > 0 or no_scores > 0:
+                st.warning(
+                    f"**Score = 0 vs No Score:** {zero_scores} students have a score of 0. "
+                    f"{no_scores} students have no score recorded. "
+                    f"Ensure zero scores represent actual performance, not missing data."
+                )
