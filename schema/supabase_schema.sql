@@ -32,6 +32,12 @@ CREATE TABLE IF NOT EXISTS assessments (
     needs_review INTEGER DEFAULT 0,
     is_draft INTEGER DEFAULT 0,
     subject_area TEXT DEFAULT 'Reading',
+    assessment_system TEXT,
+    measure TEXT,
+    raw_score DOUBLE PRECISION,
+    scaled_score DOUBLE PRECISION,
+    benchmark_threshold_used TEXT,
+    score_metadata JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(student_id, assessment_type, assessment_period, school_year)
 );
@@ -47,6 +53,14 @@ CREATE TABLE IF NOT EXISTS interventions (
     duration_minutes INTEGER,
     status TEXT NOT NULL DEFAULT 'Active',
     notes TEXT,
+    subject_area TEXT,
+    focus_skill TEXT,
+    delivery_type TEXT,
+    minutes_per_week INTEGER,
+    pre_score DOUBLE PRECISION,
+    post_score DOUBLE PRECISION,
+    pre_score_measure TEXT,
+    post_score_measure TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -64,6 +78,7 @@ CREATE TABLE IF NOT EXISTS literacy_scores (
     sight_words_component DOUBLE PRECISION,
     risk_level TEXT,
     trend TEXT,
+    support_tier TEXT,
     calculated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(student_id, school_year, assessment_period)
 );
@@ -105,6 +120,7 @@ CREATE TABLE IF NOT EXISTS math_scores (
     quantity_discrimination_component DOUBLE PRECISION,
     risk_level TEXT,
     trend TEXT,
+    support_tier TEXT,
     calculated_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(student_id, school_year, assessment_period)
 );
@@ -124,3 +140,10 @@ CREATE INDEX IF NOT EXISTS idx_math_scores_year ON math_scores(school_year);
 CREATE INDEX IF NOT EXISTS idx_math_scores_period ON math_scores(assessment_period);
 CREATE INDEX IF NOT EXISTS idx_teacher_notes_student ON teacher_notes(student_id);
 CREATE INDEX IF NOT EXISTS idx_student_goals_student ON student_goals(student_id);
+CREATE INDEX IF NOT EXISTS idx_assessments_system ON assessments(assessment_system);
+CREATE INDEX IF NOT EXISTS idx_assessments_measure ON assessments(measure);
+CREATE INDEX IF NOT EXISTS idx_assessments_date ON assessments(assessment_date);
+CREATE INDEX IF NOT EXISTS idx_interventions_subject ON interventions(subject_area);
+CREATE INDEX IF NOT EXISTS idx_interventions_status ON interventions(status);
+CREATE INDEX IF NOT EXISTS idx_literacy_scores_tier ON literacy_scores(support_tier);
+CREATE INDEX IF NOT EXISTS idx_math_scores_tier ON math_scores(support_tier);

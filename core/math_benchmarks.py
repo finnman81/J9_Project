@@ -13,6 +13,7 @@ Benchmark status levels:
 """
 from typing import Optional, Dict, List, Tuple
 import pandas as pd
+import numpy as np
 
 # ---------------------------------------------------------------------------
 # Grade-level helpers (same as benchmarks.py)
@@ -77,11 +78,31 @@ _MATH_BENCHMARKS: Dict[Tuple[str, str, str], Tuple[float, float, float]] = {
     ('Math_Computation', '2', 'BOY'): (8, 6, 0),
     ('Math_Computation', '2', 'MOY'): (14, 11, 0),
     ('Math_Computation', '2', 'EOY'): (14, 11, 0),
+    ('Math_Computation', '3', 'BOY'): (12, 10, 0),
+    ('Math_Computation', '3', 'MOY'): (16, 13, 0),
+    ('Math_Computation', '3', 'EOY'): (18, 15, 0),
+    ('Math_Computation', '4', 'BOY'): (14, 12, 0),
+    ('Math_Computation', '4', 'MOY'): (18, 15, 0),
+    ('Math_Computation', '4', 'EOY'): (20, 17, 0),
     
     # ── Concepts & Application ────────────────────────────────────────────
     ('Math_Concepts_Application', '2', 'BOY'): (18, 14, 0),
     ('Math_Concepts_Application', '2', 'MOY'): (31, 24, 0),
     ('Math_Concepts_Application', '2', 'EOY'): (31, 24, 0),
+    ('Math_Concepts_Application', '3', 'BOY'): (25, 20, 0),
+    ('Math_Concepts_Application', '3', 'MOY'): (38, 30, 0),
+    ('Math_Concepts_Application', '3', 'EOY'): (42, 35, 0),
+    ('Math_Concepts_Application', '4', 'BOY'): (30, 25, 0),
+    ('Math_Concepts_Application', '4', 'MOY'): (45, 38, 0),
+    ('Math_Concepts_Application', '4', 'EOY'): (50, 42, 0),
+    
+    # ── Math Composite (estimated for grades 3-4) ──────────────────────────
+    ('Math_Composite', '3', 'BOY'): (28, 22, 0),
+    ('Math_Composite', '3', 'MOY'): (42, 35, 0),
+    ('Math_Composite', '3', 'EOY'): (48, 40, 0),
+    ('Math_Composite', '4', 'BOY'): (32, 26, 0),
+    ('Math_Composite', '4', 'MOY'): (48, 40, 0),
+    ('Math_Composite', '4', 'EOY'): (55, 47, 0),
 }
 
 # All Acadience Math measure names supported
@@ -211,6 +232,94 @@ def math_benchmark_emoji(status: Optional[str]) -> str:
         'Below Benchmark': '🟡',
         'Well Below Benchmark': '🔴',
     }.get(status, '⚪')
+
+# ── Approximate typical growth per period (BOY→MOY and MOY→EOY) ──────────
+# Derived from published Acadience Math benchmark goals: typical growth ≈
+# benchmark_goal(next_period) − benchmark_goal(current_period).
+# Key: (measure, grade, from_period, to_period) → expected_typical_growth
+_MATH_TYPICAL_GROWTH: Dict[Tuple[str, str, str, str], float] = {}
+
+
+def _build_math_typical_growth():
+    """Pre-compute typical math growth from benchmark goal deltas."""
+    period_seq = ['BOY', 'MOY', 'EOY']
+    for (measure, grade, period), (_, goal, _) in _MATH_BENCHMARKS.items():
+        idx = period_seq.index(period) if period in period_seq else -1
+        if idx < len(period_seq) - 1:
+            next_period = period_seq[idx + 1]
+            next_key = (measure, grade, next_period)
+            if next_key in _MATH_BENCHMARKS:
+                next_goal = _MATH_BENCHMARKS[next_key][1]
+                _MATH_TYPICAL_GROWTH[(measure, grade, period, next_period)] = next_goal - goal
+
+
+_build_math_typical_growth()
+
+
+def get_math_typical_growth(measure: str, grade, from_period, to_period) -> Optional[float]:
+    """Return the expected typical growth for a math measure between two periods."""
+    g = _g(grade)
+    fp = _p(from_period)
+    tp = _p(to_period)
+    if g is None or fp is None or tp is None:
+        return None
+    # Normalize measure name
+    measure_map = {
+        'Computation': 'Math_Computation',
+        'Concepts & Application': 'Math_Concepts_Application',
+        'Concepts_Application': 'Math_Concepts_Application',
+    }
+    measure = measure_map.get(measure, measure)
+    return _MATH_TYPICAL_GROWTH.get((measure, g, fp, tp))
+
+
+def classify_math_growth(measure: str, grade, from_period, to_period,
+                         actual_growth: float) -> Optional[str]:
+    """Classify math growth rate relative to typical peers.
+
+    Returns one of:
+      'Well Above Typical', 'Above Typical', 'Typical',
+      'Below Typical', 'Well Below Typical', or None.
+    """
+    g = _g(grade)
+    fp = _p(from_period)
+    tp = _p(to_period)
+    if g is None or fp is None or tp is None:
+        return None
+    # Normalize measure name
+    measure_map = {
+        'Computation': 'Math_Computation',
+        'Concepts & Application': 'Math_Concepts_Application',
+        'Concepts_Application': 'Math_Concepts_Application',
+    }
+    measure = measure_map.get(measure, measure)
+    key = (measure, g, fp, tp)
+    typical = _MATH_TYPICAL_GROWTH.get(key)
+    if typical is None or typical == 0:
+        return None
+    ratio = actual_growth / typical
+    if ratio >= 1.5:
+        return 'Well Above Typical'
+    elif ratio >= 1.15:
+        return 'Above Typical'
+    elif ratio >= 0.75:
+        return 'Typical'
+    elif ratio >= 0.4:
+        return 'Below Typical'
+    else:
+        return 'Well Below Typical'
+
+
+def math_growth_color(classification: Optional[str]) -> str:
+    """Return a hex color for a math growth classification."""
+    return {
+        'Well Above Typical': '#1a7431',
+        'Above Typical': '#28a745',
+        'Typical': '#17a2b8',
+        'Below Typical': '#ffc107',
+        'Well Below Typical': '#dc3545',
+    }.get(classification, '#6c757d')
+
 
 def group_math_students(students_df: pd.DataFrame, scores_df: pd.DataFrame,
                        measure: str = 'Math_Composite') -> pd.DataFrame:

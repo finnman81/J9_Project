@@ -20,6 +20,50 @@ from core.erb_scoring import (
 )
 from datetime import datetime
 
+# ---------------------------------------------------------------------------
+# Assessment system / measure mapping for metadata storage
+# ---------------------------------------------------------------------------
+
+_ASSESSMENT_SYSTEM_MAP = {
+    # Reading - internal
+    'Reading_Level': ('Internal', 'Reading_Level'),
+    'Sight_Words': ('Internal', 'Sight_Words'),
+    'Spelling': ('Internal', 'Spelling'),
+    'Spelling_Inventory': ('Internal', 'Spelling_Inventory'),
+    'Benchmark': ('Internal', 'Benchmark'),
+    'Easy_CBM': ('Easy_CBM', 'Easy_CBM'),
+    'Phonics_Survey': ('Internal', 'Phonics_Survey'),
+    # Reading - Acadience
+    'ORF': ('Acadience', 'ORF'),
+    'NWF-CLS': ('Acadience', 'NWF-CLS'),
+    'NWF-WWR': ('Acadience', 'NWF-WWR'),
+    'PSF': ('Acadience', 'PSF'),
+    'FSF': ('Acadience', 'FSF'),
+    'Maze': ('Acadience', 'Maze'),
+    'Retell': ('Acadience', 'Retell'),
+    # Math - Acadience
+    'NIF': ('Acadience', 'NIF'),
+    'NNF': ('Acadience', 'NNF'),
+    'AQD': ('Acadience', 'AQD'),
+    'MNF': ('Acadience', 'MNF'),
+    'Math_Computation': ('Acadience', 'Math_Computation'),
+    'Math_Concepts_Application': ('Acadience', 'Math_Concepts_Application'),
+    'Math_Composite': ('Acadience', 'Math_Composite'),
+    # ERB / CTP5
+    'ERB_Reading_Comp': ('ERB/CTP5', 'ERB_Reading_Comp'),
+    'ERB_Vocabulary': ('ERB/CTP5', 'ERB_Vocabulary'),
+    'ERB_Writing_Mechanics': ('ERB/CTP5', 'ERB_Writing_Mechanics'),
+    'ERB_Writing_Concepts': ('ERB/CTP5', 'ERB_Writing_Concepts'),
+    'ERB_Mathematics': ('ERB/CTP5', 'ERB_Mathematics'),
+    'ERB_Verbal_Reasoning': ('ERB/CTP5', 'ERB_Verbal_Reasoning'),
+    'ERB_Quant_Reasoning': ('ERB/CTP5', 'ERB_Quant_Reasoning'),
+}
+
+
+def _get_assessment_metadata(assessment_type: str):
+    """Return (assessment_system, measure) for a given assessment type."""
+    return _ASSESSMENT_SYSTEM_MAP.get(assessment_type, (None, assessment_type))
+
 def show_grade_entry():
     st.title("✏️ Grade Entry")
     st.caption("Keyboard-first workflow: paste rows into the bulk grid and use tab/arrow keys to move quickly.")
@@ -393,6 +437,12 @@ def show_single_entry_form():
     intervention_duration = None
     intervention_status = None
     intervention_notes = None
+    intervention_subject = None
+    intervention_focus_skill = None
+    intervention_delivery_type = None
+    intervention_minutes_per_week = None
+    intervention_pre_score = None
+    intervention_pre_score_measure = None
     
     if add_intervention_entry:
         col1, col2 = st.columns(2)
@@ -405,23 +455,69 @@ def show_single_entry_form():
                     "One_on_One_Tutoring",
                     "Phonics_Program",
                     "Reading_Recovery",
+                    "Math_Intervention",
                     "RTI_Services",
                     "Pull_Out_Services",
+                    "Technology_Based",
                     "Other"
                 ]
             )
             
+            intervention_subject = st.selectbox(
+                "Intervention Subject",
+                ["Reading", "Math"],
+                index=0 if subject_area == "Reading" else 1,
+                key="intervention_subject"
+            )
+            
+            # Focus skill dropdown based on subject
+            if intervention_subject == "Reading":
+                focus_skill_options = ["", "ORF", "NWF-CLS", "NWF-WWR", "PSF", "FSF",
+                                       "Maze", "Retell", "Phonics", "Fluency",
+                                       "Comprehension", "Vocabulary", "Sight Words", "Spelling"]
+            else:
+                focus_skill_options = ["", "Math_Computation", "Math_Concepts_Application",
+                                       "NIF", "NNF", "AQD", "MNF", "Number Sense",
+                                       "Fact Fluency", "Problem Solving"]
+            intervention_focus_skill = st.selectbox(
+                "Focus Skill *",
+                focus_skill_options,
+                key="intervention_focus_skill",
+                help="Select the specific skill this intervention targets"
+            )
+            
             intervention_start_date = st.date_input("Start Date", value=datetime.now().date())
             intervention_end_date = st.date_input("End Date (optional)", value=None)
+        
+        with col2:
+            intervention_delivery_type = st.selectbox(
+                "Delivery Type",
+                ["Small Group", "1:1", "Push-in", "Pull-out", "Technology-based", "Other"],
+                key="intervention_delivery"
+            )
+            
+            intervention_minutes_per_week = st.number_input(
+                "Minutes per Week *",
+                min_value=0, value=90, step=15,
+                help="Total intervention minutes per week (e.g., 3 sessions x 30 min = 90)"
+            )
             
             intervention_frequency = st.selectbox(
                 "Frequency",
                 ["Daily", "3x_week", "Weekly", "Bi-weekly", "Other"]
             )
-        
-        with col2:
             intervention_duration = st.number_input("Duration (minutes per session)", min_value=1, value=30)
             intervention_status = st.selectbox("Status", ["Active", "Completed", "Discontinued"])
+            
+            intervention_pre_score = st.number_input(
+                "Pre-Score (baseline at start)", min_value=0.0, value=0.0, step=0.1,
+                help="Score on the focus measure at intervention start. Leave at 0 if unknown."
+            )
+            if intervention_pre_score == 0.0:
+                intervention_pre_score = None  # Don't store 0 as a meaningful score
+            
+            intervention_pre_score_measure = intervention_focus_skill if intervention_focus_skill else None
+            
             intervention_notes = st.text_area("Intervention Notes", height=100)
     
     # Submit Button
@@ -473,21 +569,58 @@ def show_single_entry_form():
                 conn.close()
             
             if student_id:
-                # Add assessment
+                # NULL handling: ensure empty scores stay NULL, never 0
+                final_score_value = str(score_value) if score_value is not None and str(score_value).strip() != '' else None
+                final_score_normalized = score_normalized if score_normalized is not None else None
+                # If score_value is empty/None, force score_normalized to None too
+                if final_score_value is None:
+                    final_score_normalized = None
+
+                # Duplicate check / warning
+                conn = get_db_connection()
+                dup_df = pd.read_sql_query(
+                    "SELECT assessment_id FROM assessments WHERE student_id = %s AND assessment_type = %s AND assessment_period = %s AND school_year = %s",
+                    conn, params=[student_id, assessment_type, assessment_period, school_year_display]
+                )
+                conn.close()
+                if not dup_df.empty:
+                    st.warning(f"An existing assessment was found for this student/type/period/year. It will be updated (upsert).")
+
+                # Derive assessment metadata
+                a_system, a_measure = _get_assessment_metadata(assessment_type)
+
+                # Build score_metadata for ERB
+                s_metadata = None
+                if assessment_type in ERB_SUBTESTS and score_value:
+                    from core.erb_scoring import parse_erb_score_value
+                    s_metadata = parse_erb_score_value(str(score_value))
+
+                # Determine raw_score (the original numeric value before normalization)
+                raw_sc = None
+                if final_score_normalized is not None:
+                    try:
+                        raw_sc = float(final_score_value) if final_score_value and final_score_value.replace('.','',1).replace('-','',1).isdigit() else None
+                    except (ValueError, TypeError):
+                        raw_sc = None
+
                 add_assessment(
                     student_id=student_id,
                     assessment_type=assessment_type,
                     assessment_period=assessment_period,
                     school_year=school_year_display,
-                    score_value=str(score_value) if score_value else None,
-                    score_normalized=score_normalized,
+                    score_value=final_score_value,
+                    score_normalized=final_score_normalized,
                     assessment_date=assessment_date.strftime("%Y-%m-%d") if assessment_date else None,
                     notes=notes if notes else None,
                     concerns=concerns if concerns else None,
                     entered_by=entered_by,
                     needs_review=needs_review,
                     is_draft=save_as_draft,
-                    subject_area=subject_area
+                    subject_area=subject_area,
+                    assessment_system=a_system,
+                    measure=a_measure,
+                    raw_score=raw_sc,
+                    score_metadata=s_metadata,
                 )
                 
                 # Add intervention if specified
@@ -500,7 +633,13 @@ def show_single_entry_form():
                         frequency=intervention_frequency,
                         duration_minutes=intervention_duration,
                         status=intervention_status,
-                        notes=intervention_notes
+                        notes=intervention_notes,
+                        subject_area=intervention_subject,
+                        focus_skill=intervention_focus_skill if intervention_focus_skill else None,
+                        delivery_type=intervention_delivery_type,
+                        minutes_per_week=intervention_minutes_per_week if intervention_minutes_per_week else None,
+                        pre_score=intervention_pre_score,
+                        pre_score_measure=intervention_pre_score_measure,
                     )
                 
                 # Recalculate scores based on subject
@@ -556,21 +695,43 @@ def show_single_entry_form():
                 conn.close()
 
             if student_id:
-                # Add assessment
+                # NULL handling
+                final_score_value = str(score_value) if score_value is not None and str(score_value).strip() != '' else None
+                final_score_normalized = score_normalized if score_normalized is not None else None
+                if final_score_value is None:
+                    final_score_normalized = None
+
+                a_system, a_measure = _get_assessment_metadata(assessment_type)
+                s_metadata = None
+                if assessment_type in ERB_SUBTESTS and score_value:
+                    from core.erb_scoring import parse_erb_score_value
+                    s_metadata = parse_erb_score_value(str(score_value))
+
+                raw_sc = None
+                if final_score_normalized is not None:
+                    try:
+                        raw_sc = float(final_score_value) if final_score_value and final_score_value.replace('.','',1).replace('-','',1).isdigit() else None
+                    except (ValueError, TypeError):
+                        raw_sc = None
+
                 add_assessment(
                     student_id=student_id,
                     assessment_type=assessment_type,
                     assessment_period=assessment_period,
                     school_year=school_year_display,
-                    score_value=str(score_value) if score_value else None,
-                    score_normalized=score_normalized,
+                    score_value=final_score_value,
+                    score_normalized=final_score_normalized,
                     assessment_date=assessment_date.strftime("%Y-%m-%d") if assessment_date else None,
                     notes=notes if notes else None,
                     concerns=concerns if concerns else None,
                     entered_by=entered_by,
                     needs_review=needs_review,
                     is_draft=save_as_draft,
-                    subject_area=subject_area
+                    subject_area=subject_area,
+                    assessment_system=a_system,
+                    measure=a_measure,
+                    raw_score=raw_sc,
+                    score_metadata=s_metadata,
                 )
 
                 # Add intervention if specified
@@ -583,7 +744,13 @@ def show_single_entry_form():
                         frequency=intervention_frequency,
                         duration_minutes=intervention_duration,
                         status=intervention_status,
-                        notes=intervention_notes
+                        notes=intervention_notes,
+                        subject_area=intervention_subject,
+                        focus_skill=intervention_focus_skill if intervention_focus_skill else None,
+                        delivery_type=intervention_delivery_type,
+                        minutes_per_week=intervention_minutes_per_week if intervention_minutes_per_week else None,
+                        pre_score=intervention_pre_score,
+                        pre_score_measure=intervention_pre_score_measure,
                     )
 
                 # Recalculate scores (both subjects to ensure consistency)
@@ -596,9 +763,34 @@ def show_single_entry_form():
 def show_bulk_entry_form():
     """Bulk entry form"""
     st.subheader("Bulk Entry")
-    
+
+    # --- Finalize Drafts Section ---
+    with st.expander("Finalize Draft Assessments"):
+        st.caption("Draft assessments are excluded from dashboards and score calculations. Finalize them here.")
+        conn = get_db_connection()
+        drafts_df = pd.read_sql_query(
+            "SELECT a.assessment_id, s.student_name, s.grade_level, a.assessment_type, a.assessment_period, a.school_year, a.score_value "
+            "FROM assessments a JOIN students s ON a.student_id = s.student_id WHERE a.is_draft = 1 ORDER BY a.created_at DESC",
+            conn
+        )
+        conn.close()
+        if drafts_df.empty:
+            st.info("No draft assessments found.")
+        else:
+            st.dataframe(drafts_df, use_container_width=True)
+            if st.button("Finalize All Drafts", key="finalize_drafts_btn"):
+                conn = get_db_connection()
+                cur = conn.cursor()
+                cur.execute("UPDATE assessments SET is_draft = 0 WHERE is_draft = 1")
+                conn.commit()
+                conn.close()
+                recalculate_literacy_scores()
+                recalculate_math_scores()
+                st.success(f"Finalized {len(drafts_df)} draft assessments.")
+                st.rerun()
+
     # Template download
-    st.info("💡 Download the template Excel file to fill in multiple students at once.")
+    st.info("Download the template Excel file to fill in multiple students at once.")
     
     # Create template
     template_df = pd.DataFrame({

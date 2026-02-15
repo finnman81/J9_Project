@@ -255,6 +255,96 @@ def show_student_detail():
             with cc3:
                 st.metric("vs Class", f"{diff:+.0f}", delta=f"{diff:+.0f}")
 
+    # ── Next Steps Panel ──────────────────────────────────────────────────
+    if latest_score and support_tier != 'Unknown':
+        st.markdown("")
+        st.subheader("Next Steps")
+        st.caption("Programmatic recommendations based on current data.")
+
+        # Identify primary deficit from Acadience measures
+        deficit_measure = None
+        deficit_score = None
+        deficit_bm = None
+        if not assessments_df.empty:
+            g_alias = GRADE_ALIASES.get(latest_score.get('grade_level', ''), '')
+            grade_measures = MEASURES_BY_GRADE.get(g_alias, [])
+            p_alias = PERIOD_MAP.get(latest_score.get('assessment_period', ''), '')
+
+            measure_results = []
+            for m in grade_measures:
+                m_df = assessments_df[assessments_df['assessment_type'] == m]
+                if not m_df.empty:
+                    raw_val = m_df.iloc[-1].get('score_normalized')
+                    try:
+                        raw_float = float(m_df.iloc[-1].get('score_value', 0))
+                    except (ValueError, TypeError):
+                        raw_float = raw_val
+                    if raw_float is not None:
+                        bm = get_benchmark_status(m, latest_score['grade_level'],
+                                                  latest_score['assessment_period'], raw_float)
+                        measure_results.append((m, raw_float, bm))
+
+            # Sort by severity: Well Below > Below > At > Above
+            severity = {'Well Below Benchmark': 0, 'Below Benchmark': 1,
+                        'At Benchmark': 2, 'Above Benchmark': 3, None: 4}
+            measure_results.sort(key=lambda x: (severity.get(x[2], 4), x[1]))
+            if measure_results:
+                deficit_measure, deficit_score, deficit_bm = measure_results[0]
+
+        # Measure-to-domain mapping
+        _MEASURE_DOMAIN = {
+            'FSF': 'Phonemic Awareness', 'PSF': 'Phonemic Awareness',
+            'NWF-CLS': 'Phonics - nonsense word fluency',
+            'NWF-WWR': 'Phonics - whole word reading',
+            'ORF': 'Fluency', 'Maze': 'Comprehension', 'Retell': 'Comprehension',
+        }
+
+        ns1, ns2 = st.columns(2)
+        with ns1:
+            if deficit_measure and deficit_bm:
+                st.markdown(f"**Primary Deficit:** {MEASURE_LABELS.get(deficit_measure, deficit_measure)} "
+                           f"({deficit_bm})")
+                domain = _MEASURE_DOMAIN.get(deficit_measure, 'General Literacy')
+                st.markdown(f"**Recommended Focus:** {domain}")
+            else:
+                st.caption("No specific deficit identified from Acadience measures.")
+
+            # Reassessment window
+            if not assessments_df.empty and 'assessment_date' in assessments_df.columns:
+                last_date = pd.to_datetime(assessments_df['assessment_date'].dropna()).max()
+                if pd.notna(last_date):
+                    from datetime import timedelta
+                    reassess_start = last_date + timedelta(weeks=6)
+                    reassess_end = reassess_start + timedelta(weeks=2)
+                    st.markdown(f"**Reassessment Window:** {reassess_start.strftime('%b %d')} - "
+                               f"{reassess_end.strftime('%b %d, %Y')}")
+
+        with ns2:
+            # Growth target
+            if deficit_measure and 'Intensive' in support_tier:
+                st.markdown("**Growth Target:** 1.5x typical growth (catch-up pace)")
+            elif deficit_measure and 'Strategic' in support_tier:
+                st.markdown("**Growth Target:** 1.15x typical growth (above-average pace)")
+
+            # Intervention alignment
+            if not active_interventions.empty and deficit_measure:
+                has_aligned = False
+                if 'focus_skill' in active_interventions.columns:
+                    aligned = active_interventions[active_interventions['focus_skill'] == deficit_measure]
+                    if not aligned.empty:
+                        has_aligned = True
+                        inv = aligned.iloc[0]
+                        mpw = inv.get('minutes_per_week', inv.get('duration_minutes', ''))
+                        st.markdown(f"**Current Intervention:** {inv['intervention_type']} "
+                                   f"({mpw} min/wk) -- aligned with deficit: Yes")
+                if not has_aligned:
+                    inv = active_interventions.iloc[0]
+                    st.markdown(f"**Current Intervention:** {inv['intervention_type']} "
+                               f"-- alignment with {MEASURE_LABELS.get(deficit_measure, deficit_measure)} deficit: "
+                               f"**Check focus skill**")
+            elif active_interventions.empty and support_tier in ('Strategic (Tier 2)', 'Intensive (Tier 3)'):
+                st.warning("No active intervention for a student needing support. Consider starting one.")
+
     # ── Progress Chart + Strengths/Weaknesses ─────────────────────────────
     st.markdown("")
     if not all_scores_df.empty:
@@ -287,12 +377,42 @@ def show_student_detail():
                           annotation_text="Needs Support", annotation_position="top right")
             fig.add_trace(go.Scatter(
                 x=scores_df['period_label'], y=scores_df['overall_literacy_score'],
-                mode='lines+markers', name='Score',
+                mode='lines+markers', name='Actual Score',
                 line=dict(color='#5b9bd5', width=3), marker=dict(size=10)))
+
+            # Typical growth trajectory (dashed line from first score)
+            actual_scores = scores_df['overall_literacy_score'].dropna().tolist()
+            if len(actual_scores) >= 2:
+                # Typical growth: benchmark threshold = 70 at end of year, linear from first score
+                first_score = actual_scores[0]
+                typical_target = max(first_score + 5 * (len(actual_scores) - 1), 70)
+                typical_step = (typical_target - first_score) / max(len(actual_scores) - 1, 1)
+                typical_line = [first_score + typical_step * i for i in range(len(actual_scores))]
+                fig.add_trace(go.Scatter(
+                    x=scores_df['period_label'].tolist()[:len(typical_line)],
+                    y=typical_line,
+                    mode='lines', name='Typical Growth',
+                    line=dict(color='#28a745', width=2, dash='dash'),
+                    opacity=0.6))
+
+                # Risk trajectory (dotted -- extrapolate last 2 points)
+                if len(actual_scores) >= 2:
+                    last_change = actual_scores[-1] - actual_scores[-2]
+                    if last_change < 0:  # Only show risk trajectory if declining
+                        risk_y = [actual_scores[-1], actual_scores[-1] + last_change]
+                        risk_x = [scores_df['period_label'].tolist()[-1],
+                                  scores_df['period_label'].tolist()[-1] + ' (proj)']
+                        fig.add_trace(go.Scatter(
+                            x=risk_x, y=risk_y,
+                            mode='lines', name='Risk Trajectory',
+                            line=dict(color='#dc3545', width=2, dash='dot'),
+                            opacity=0.5))
+
             fig.update_layout(title='Progress Over Time', xaxis_title='',
                               yaxis_title='Score', height=380,
                               yaxis=dict(range=[0, 100]), xaxis=dict(tickangle=45),
-                              margin=dict(t=40, b=60))
+                              margin=dict(t=40, b=60),
+                              legend=dict(orientation='h', y=1.1))
             st.plotly_chart(fig, width='stretch')
 
         with ch2:
@@ -533,12 +653,45 @@ def show_student_detail():
     # ── Interventions & Goals (expander) ──────────────────────────────────
     with st.expander("Interventions & Goals", expanded=False):
         if not interventions_df.empty:
-            st.markdown("**Active Interventions**")
-            disp_int = interventions_df[['intervention_type', 'status', 'frequency',
-                                         'duration_minutes', 'start_date', 'notes']].copy()
-            disp_int.columns = ['Type', 'Status', 'Frequency', 'Minutes', 'Start', 'Notes']
-            disp_int['Notes'] = disp_int['Notes'].fillna('--')
-            st.dataframe(disp_int, width='stretch', height=180)
+            st.markdown("**Interventions**")
+            # Build display with new structured fields
+            disp_cols = ['intervention_type', 'status', 'start_date']
+            disp_names = ['Type', 'Status', 'Start']
+
+            if 'focus_skill' in interventions_df.columns and interventions_df['focus_skill'].notna().any():
+                disp_cols.append('focus_skill')
+                disp_names.append('Focus Skill')
+            if 'delivery_type' in interventions_df.columns and interventions_df['delivery_type'].notna().any():
+                disp_cols.append('delivery_type')
+                disp_names.append('Delivery')
+            if 'minutes_per_week' in interventions_df.columns and interventions_df['minutes_per_week'].notna().any():
+                disp_cols.append('minutes_per_week')
+                disp_names.append('Min/Wk')
+            else:
+                disp_cols.extend(['frequency', 'duration_minutes'])
+                disp_names.extend(['Frequency', 'Min/Session'])
+
+            disp_int = interventions_df[disp_cols].copy()
+            disp_int.columns = disp_names
+
+            # Pre/post score deltas
+            if 'pre_score' in interventions_df.columns and 'post_score' in interventions_df.columns:
+                has_scores = interventions_df[['pre_score', 'post_score']].notna().any().any()
+                if has_scores:
+                    deltas = []
+                    for _, r in interventions_df.iterrows():
+                        pre = r.get('pre_score')
+                        post = r.get('post_score')
+                        if pd.notna(pre) and pd.notna(post):
+                            delta = post - pre
+                            deltas.append(f"{pre:.0f} → {post:.0f} ({delta:+.0f})")
+                        elif pd.notna(pre):
+                            deltas.append(f"Pre: {pre:.0f} (in progress)")
+                        else:
+                            deltas.append('--')
+                    disp_int['Score Change'] = deltas
+
+            st.dataframe(disp_int, use_container_width=True, height=180)
         else:
             st.info("No interventions recorded.")
 

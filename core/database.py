@@ -106,6 +106,12 @@ def init_database():
             needs_review INTEGER DEFAULT 0,
             is_draft INTEGER DEFAULT 0,
             subject_area TEXT DEFAULT 'Reading',
+            assessment_system TEXT,
+            measure TEXT,
+            raw_score DOUBLE PRECISION,
+            scaled_score DOUBLE PRECISION,
+            benchmark_threshold_used TEXT,
+            score_metadata JSONB DEFAULT '{}',
             created_at TIMESTAMPTZ DEFAULT NOW(),
             UNIQUE(student_id, assessment_type, assessment_period, school_year)
         )
@@ -122,6 +128,14 @@ def init_database():
             duration_minutes INTEGER,
             status TEXT NOT NULL DEFAULT 'Active',
             notes TEXT,
+            subject_area TEXT,
+            focus_skill TEXT,
+            delivery_type TEXT,
+            minutes_per_week INTEGER,
+            pre_score DOUBLE PRECISION,
+            post_score DOUBLE PRECISION,
+            pre_score_measure TEXT,
+            post_score_measure TEXT,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
         )
@@ -140,6 +154,7 @@ def init_database():
             sight_words_component DOUBLE PRECISION,
             risk_level TEXT,
             trend TEXT,
+            support_tier TEXT,
             calculated_at TIMESTAMPTZ DEFAULT NOW(),
             UNIQUE(student_id, school_year, assessment_period)
         )
@@ -184,6 +199,7 @@ def init_database():
             quantity_discrimination_component DOUBLE PRECISION,
             risk_level TEXT,
             trend TEXT,
+            support_tier TEXT,
             calculated_at TIMESTAMPTZ DEFAULT NOW(),
             UNIQUE(student_id, school_year, assessment_period)
         )
@@ -257,15 +273,23 @@ def add_assessment(student_id: int, assessment_type: str, assessment_period: str
                    school_year: str, score_value: str = None, score_normalized: float = None,
                    assessment_date: str = None, notes: str = None, concerns: str = None,
                    entered_by: str = None, needs_review: bool = False, is_draft: bool = False,
-                   subject_area: str = 'Reading'):
+                   subject_area: str = 'Reading',
+                   assessment_system: str = None, measure: str = None,
+                   raw_score: float = None, scaled_score: float = None,
+                   benchmark_threshold_used: str = None, score_metadata: dict = None):
     """Add an assessment record (upsert on unique constraint)."""
+    import json
+    meta_json = json.dumps(score_metadata) if score_metadata else '{}'
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('''
         INSERT INTO assessments
             (student_id, assessment_type, assessment_period, school_year, score_value,
-             score_normalized, assessment_date, notes, concerns, entered_by, needs_review, is_draft, subject_area)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             score_normalized, assessment_date, notes, concerns, entered_by,
+             needs_review, is_draft, subject_area,
+             assessment_system, measure, raw_score, scaled_score,
+             benchmark_threshold_used, score_metadata)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (student_id, assessment_type, assessment_period, school_year)
         DO UPDATE SET
             score_value = EXCLUDED.score_value,
@@ -276,10 +300,18 @@ def add_assessment(student_id: int, assessment_type: str, assessment_period: str
             entered_by = EXCLUDED.entered_by,
             needs_review = EXCLUDED.needs_review,
             is_draft = EXCLUDED.is_draft,
-            subject_area = EXCLUDED.subject_area
+            subject_area = EXCLUDED.subject_area,
+            assessment_system = EXCLUDED.assessment_system,
+            measure = EXCLUDED.measure,
+            raw_score = EXCLUDED.raw_score,
+            scaled_score = EXCLUDED.scaled_score,
+            benchmark_threshold_used = EXCLUDED.benchmark_threshold_used,
+            score_metadata = EXCLUDED.score_metadata
     ''', (student_id, assessment_type, assessment_period, school_year, score_value,
           score_normalized, assessment_date, notes, concerns, entered_by,
-          int(needs_review), int(is_draft), subject_area))
+          int(needs_review), int(is_draft), subject_area,
+          assessment_system, measure, raw_score, scaled_score,
+          benchmark_threshold_used, meta_json))
     conn.commit()
     conn.close()
 
@@ -359,15 +391,25 @@ def get_student_goals(student_id: int) -> pd.DataFrame:
 
 def add_intervention(student_id: int, intervention_type: str, start_date: str,
                      end_date: str = None, frequency: str = None, duration_minutes: int = None,
-                     status: str = 'Active', notes: str = None):
-    """Add an intervention record."""
+                     status: str = 'Active', notes: str = None,
+                     subject_area: str = None, focus_skill: str = None,
+                     delivery_type: str = None, minutes_per_week: int = None,
+                     pre_score: float = None, post_score: float = None,
+                     pre_score_measure: str = None, post_score_measure: str = None):
+    """Add an intervention record with optional structured fields."""
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('''
         INSERT INTO interventions
-            (student_id, intervention_type, start_date, end_date, frequency, duration_minutes, status, notes)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-    ''', (student_id, intervention_type, start_date, end_date, frequency, duration_minutes, status, notes))
+            (student_id, intervention_type, start_date, end_date, frequency,
+             duration_minutes, status, notes, subject_area, focus_skill,
+             delivery_type, minutes_per_week, pre_score, post_score,
+             pre_score_measure, post_score_measure)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ''', (student_id, intervention_type, start_date, end_date, frequency,
+          duration_minutes, status, notes, subject_area, focus_skill,
+          delivery_type, minutes_per_week, pre_score, post_score,
+          pre_score_measure, post_score_measure))
     conn.commit()
     conn.close()
 
@@ -379,7 +421,7 @@ def save_literacy_score(student_id: int, school_year: str, assessment_period: st
                         overall_score: float, reading_component: float = None,
                         phonics_component: float = None, spelling_component: float = None,
                         sight_words_component: float = None, risk_level: str = None,
-                        trend: str = None):
+                        trend: str = None, support_tier: str = None):
     """Save calculated literacy score (upsert on unique constraint)."""
     conn = get_db_connection()
     cur = conn.cursor()
@@ -387,8 +429,8 @@ def save_literacy_score(student_id: int, school_year: str, assessment_period: st
         INSERT INTO literacy_scores
             (student_id, school_year, assessment_period, overall_literacy_score,
              reading_component, phonics_component, spelling_component, sight_words_component,
-             risk_level, trend)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             risk_level, trend, support_tier)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (student_id, school_year, assessment_period)
         DO UPDATE SET
             overall_literacy_score = EXCLUDED.overall_literacy_score,
@@ -398,10 +440,11 @@ def save_literacy_score(student_id: int, school_year: str, assessment_period: st
             sight_words_component = EXCLUDED.sight_words_component,
             risk_level = EXCLUDED.risk_level,
             trend = EXCLUDED.trend,
+            support_tier = EXCLUDED.support_tier,
             calculated_at = NOW()
     ''', (student_id, school_year, assessment_period, overall_score,
           reading_component, phonics_component, spelling_component, sight_words_component,
-          risk_level, trend))
+          risk_level, trend, support_tier))
     conn.commit()
     conn.close()
 
@@ -507,7 +550,7 @@ def save_math_score(student_id: int, school_year: str, assessment_period: str,
                     overall_score: float, computation_component: float = None,
                     concepts_component: float = None, number_fluency_component: float = None,
                     quantity_discrimination_component: float = None, risk_level: str = None,
-                    trend: str = None):
+                    trend: str = None, support_tier: str = None):
     """Save calculated math score (upsert on unique constraint)."""
     conn = get_db_connection()
     cur = conn.cursor()
@@ -515,8 +558,8 @@ def save_math_score(student_id: int, school_year: str, assessment_period: str,
         INSERT INTO math_scores
             (student_id, school_year, assessment_period, overall_math_score,
              computation_component, concepts_component, number_fluency_component,
-             quantity_discrimination_component, risk_level, trend)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             quantity_discrimination_component, risk_level, trend, support_tier)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (student_id, school_year, assessment_period)
         DO UPDATE SET
             overall_math_score = EXCLUDED.overall_math_score,
@@ -526,10 +569,11 @@ def save_math_score(student_id: int, school_year: str, assessment_period: str,
             quantity_discrimination_component = EXCLUDED.quantity_discrimination_component,
             risk_level = EXCLUDED.risk_level,
             trend = EXCLUDED.trend,
+            support_tier = EXCLUDED.support_tier,
             calculated_at = NOW()
     ''', (student_id, school_year, assessment_period, overall_score,
           computation_component, concepts_component, number_fluency_component,
-          quantity_discrimination_component, risk_level, trend))
+          quantity_discrimination_component, risk_level, trend, support_tier))
     conn.commit()
     conn.close()
 
@@ -561,6 +605,88 @@ def get_latest_math_score(student_id: int, school_year: str = None) -> Optional[
     result = cur.fetchone()
     conn.close()
     return dict(result) if result else None
+
+
+# ---------------------------------------------------------------------------
+# Active interventions helper
+# ---------------------------------------------------------------------------
+
+def get_active_interventions(student_id: int = None, subject: str = None) -> pd.DataFrame:
+    """Get active interventions, optionally filtered by student and/or subject."""
+    conn = get_db_connection()
+    query = "SELECT i.*, s.student_name, s.grade_level, s.teacher_name FROM interventions i JOIN students s ON i.student_id = s.student_id WHERE i.status = 'Active'"
+    params: list = []
+
+    if student_id:
+        query += ' AND i.student_id = %s'
+        params.append(student_id)
+    if subject:
+        query += ' AND (i.subject_area = %s OR i.subject_area IS NULL)'
+        params.append(subject)
+
+    query += ' ORDER BY i.start_date DESC'
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
+
+
+def get_all_interventions(school_year: str = None) -> pd.DataFrame:
+    """Get all interventions with student info."""
+    conn = get_db_connection()
+    query = '''
+        SELECT i.*, s.student_name, s.grade_level, s.teacher_name, s.school_year
+        FROM interventions i
+        JOIN students s ON i.student_id = s.student_id
+    '''
+    params: list = []
+    if school_year:
+        query += ' WHERE s.school_year = %s'
+        params.append(school_year)
+    query += ' ORDER BY i.start_date DESC'
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
+
+
+def get_all_assessments(subject: str = None, school_year: str = None,
+                        exclude_drafts: bool = True) -> pd.DataFrame:
+    """Get all assessments with student info, optionally filtered."""
+    conn = get_db_connection()
+    query = '''
+        SELECT a.*, s.student_name, s.grade_level, s.teacher_name
+        FROM assessments a
+        JOIN students s ON a.student_id = s.student_id
+        WHERE 1=1
+    '''
+    params: list = []
+    if subject:
+        query += ' AND a.subject_area = %s'
+        params.append(subject)
+    if school_year:
+        query += ' AND a.school_year = %s'
+        params.append(school_year)
+    if exclude_drafts:
+        query += ' AND COALESCE(a.is_draft, 0) = 0'
+
+    query += ' ORDER BY a.assessment_date DESC NULLS LAST, a.created_at DESC'
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
+
+
+def get_all_scores(subject: str = 'Reading', school_year: str = None) -> pd.DataFrame:
+    """Get all calculated scores for a subject."""
+    conn = get_db_connection()
+    table = 'literacy_scores' if subject == 'Reading' else 'math_scores'
+    query = f'SELECT sc.*, s.student_name, s.grade_level, s.teacher_name FROM {table} sc JOIN students s ON sc.student_id = s.student_id'
+    params: list = []
+    if school_year:
+        query += ' WHERE sc.school_year = %s'
+        params.append(school_year)
+    query += ' ORDER BY sc.student_id, sc.assessment_period'
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
 
 
 if __name__ == '__main__':

@@ -6,7 +6,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from core.database import get_all_students, get_db_connection
+from core.database import (
+    get_all_students, get_db_connection,
+    get_all_assessments, get_all_scores, get_all_interventions,
+)
 from core.calculations import determine_risk_level
 from core.benchmarks import (
     get_benchmark_status, get_support_level, benchmark_color,
@@ -17,6 +20,13 @@ from core.erb_scoring import (
     erb_stanine_to_tier, get_erb_independent_norm,
     parse_erb_score_value,
 )
+from core.tier_engine import (
+    assign_tiers_bulk, TIER_CORE, TIER_STRATEGIC, TIER_INTENSIVE, TIER_UNKNOWN,
+    is_needs_support,
+)
+from core.priority_engine import compute_priority_students, get_top_priority
+from core.data_health import compute_data_health
+from core.growth_engine import compute_period_growth, compute_cohort_growth_summary
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -196,48 +206,150 @@ def show_overview_dashboard():
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
 
+    # ── Load supporting data for new engines ────────────────────────────
+    yr_filter = selected_year if selected_year != 'All' else None
+    all_assessments = get_all_assessments(subject='Reading', school_year=yr_filter)
+    all_scores = get_all_scores(subject='Reading', school_year=yr_filter)
+    all_interventions = get_all_interventions(school_year=yr_filter)
+
+    # Filter students to current selection for engine calls
+    filtered_students = df[['student_id', 'student_name', 'grade_level',
+                            'class_name', 'teacher_name', 'school_year']].drop_duplicates(subset=['student_id'])
+
+    # ── Unified tier assignment ───────────────────────────────────────────
+    tiered_df = assign_tiers_bulk(filtered_students, all_scores, all_assessments,
+                                  subject='Reading', school_year=yr_filter)
+
     # ── Compute KPI values ────────────────────────────────────────────────
     total_students = len(df['student_id'].unique())
-    needs_support = len(df[df['risk_level'].isin(['High', 'Medium'])]) if 'risk_level' in df.columns else 0
+    # Aligned "Needs Support" uses unified tiers
+    needs_support = int(tiered_df['support_tier'].apply(is_needs_support).sum()) if not tiered_df.empty else 0
+    strategic_count = int((tiered_df['support_tier'] == TIER_STRATEGIC).sum()) if not tiered_df.empty else 0
+    intensive_count = int((tiered_df['support_tier'] == TIER_INTENSIVE).sum()) if not tiered_df.empty else 0
     avg_score = df['overall_literacy_score'].mean() if 'overall_literacy_score' in df.columns else 0
     students_with_scores = len(df[df['overall_literacy_score'].notna()])
     completion_rate = (students_with_scores / total_students * 100) if total_students > 0 else 0
 
-    # Intervention coverage
-    conn = get_db_connection()
-    cov_q = '''
-        SELECT COUNT(DISTINCT s.student_id) AS covered
-        FROM students s
-        JOIN literacy_scores ls ON ls.student_id = s.student_id AND ls.school_year = s.school_year
-        JOIN interventions i ON i.student_id = s.student_id AND i.status = 'Active'
-        WHERE ls.score_id = (
-            SELECT score_id FROM literacy_scores ls2
-            WHERE ls2.student_id = s.student_id AND ls2.school_year = s.school_year
-            ORDER BY ls2.calculated_at DESC LIMIT 1)
-          AND ls.risk_level IN ('High', 'Medium')
-    '''
-    cov_params = []
-    if selected_year != 'All':
-        cov_q += ' AND s.school_year = %s'
-        cov_params.append(selected_year)
-    cov_df = pd.read_sql_query(cov_q, conn, params=cov_params)
-    conn.close()
-    covered = cov_df['covered'].iloc[0] if not cov_df.empty else 0
-    coverage_text = f"{covered} of {needs_support}" if needs_support > 0 else "N/A"
+    # Tier-split intervention coverage
+    active_int_ids = set()
+    if not all_interventions.empty:
+        active_ints = all_interventions[all_interventions['status'] == 'Active']
+        active_int_ids = set(active_ints['student_id'].unique())
+
+    strategic_ids = set(tiered_df[tiered_df['support_tier'] == TIER_STRATEGIC]['student_id'])
+    intensive_ids = set(tiered_df[tiered_df['support_tier'] == TIER_INTENSIVE]['student_id'])
+    strat_covered = len(strategic_ids & active_int_ids)
+    int_covered = len(intensive_ids & active_int_ids)
+    total_need = strategic_count + intensive_count
+    total_covered = strat_covered + int_covered
+
+    # Data health
+    health = compute_data_health(filtered_students, all_assessments, all_scores,
+                                 subject='Reading', school_year=yr_filter)
 
     # ── KPI Cards ─────────────────────────────────────────────────────────
     st.markdown("")
-    k1, k2, k3, k4, k5 = st.columns(5)
+    k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
     with k1:
         st.metric("Total Students", total_students)
     with k2:
-        st.metric("Needs Support", needs_support)
+        st.metric("Needs Support", needs_support,
+                  help="Strategic + Intensive tiers (unified tier logic)")
     with k3:
         st.metric("Average Score", f"{avg_score:.1f}" if avg_score else "N/A")
     with k4:
-        st.metric("Intervention Coverage", coverage_text)
+        cov_pct = f"{total_covered}/{total_need} ({total_covered/total_need*100:.0f}%)" if total_need else "N/A"
+        st.metric("Intervention Coverage", cov_pct)
     with k5:
         st.metric("Assessed", f"{completion_rate:.0f}%")
+    with k6:
+        st.metric("Median Days Since Assess.",
+                  f"{health['median_days_since_assessment']:.0f}" if health['median_days_since_assessment'] is not None else "N/A")
+    with k7:
+        st.metric("% Overdue (>90d)", f"{health['pct_overdue']:.0f}%")
+
+    # ── Tier-Split Coverage Detail ────────────────────────────────────────
+    cov1, cov2, cov3 = st.columns(3)
+    with cov1:
+        st.caption(f"Strategic: {strat_covered}/{strategic_count} covered" if strategic_count else "Strategic: 0")
+    with cov2:
+        st.caption(f"Intensive: {int_covered}/{intensive_count} covered" if intensive_count else "Intensive: 0")
+    with cov3:
+        st.caption(f"Overall: {total_covered}/{total_need} covered" if total_need else "Overall: N/A")
+
+    # ── Priority Students Panel ───────────────────────────────────────────
+    st.markdown("")
+    st.subheader("Priority Students")
+    st.caption("Students automatically surfaced based on tier, intervention gaps, declining trends, and assessment staleness.")
+
+    priority_df = compute_priority_students(
+        filtered_students, all_scores, all_interventions, all_assessments,
+        subject='Reading', school_year=yr_filter,
+    )
+    top_priority = get_top_priority(priority_df, n=15)
+
+    if not top_priority.empty:
+        pc1, pc2, pc3 = st.columns(3)
+        flagged_strat = int((top_priority['support_tier'] == TIER_STRATEGIC).sum())
+        flagged_int = int((top_priority['support_tier'] == TIER_INTENSIVE).sum())
+        with pc1:
+            st.metric("Flagged Strategic", flagged_strat)
+        with pc2:
+            st.metric("Flagged Intensive", flagged_int)
+        with pc3:
+            st.metric("Total Flagged", len(top_priority))
+
+        disp = top_priority[['student_name', 'grade_level', 'support_tier',
+                              'has_active_intervention', 'days_since_last_assessment',
+                              'growth_trend', 'priority_score', 'priority_reasons']].copy()
+        disp.columns = ['Student', 'Grade', 'Tier', 'Has Intervention',
+                        'Days Since Assess.', 'Trend', 'Priority Score', 'Reasons']
+        disp['Reasons'] = disp['Reasons'].apply(lambda r: '; '.join(r) if isinstance(r, list) else str(r))
+        disp['Has Intervention'] = disp['Has Intervention'].map({True: 'Yes', False: 'No'})
+        disp['Days Since Assess.'] = disp['Days Since Assess.'].apply(lambda x: f"{x:.0f}" if pd.notna(x) else '--')
+
+        st.markdown(_render_colored_table(disp, {'Tier': _TIER_BG}, max_height=400),
+                    unsafe_allow_html=True)
+
+        with st.expander("View All Priority Students"):
+            all_flagged = priority_df[priority_df['priority_score'] > 0].copy()
+            if not all_flagged.empty:
+                all_disp = all_flagged[['student_name', 'grade_level', 'support_tier',
+                                        'has_active_intervention', 'days_since_last_assessment',
+                                        'growth_trend', 'priority_score', 'priority_reasons']].copy()
+                all_disp.columns = ['Student', 'Grade', 'Tier', 'Has Intervention',
+                                    'Days Since Assess.', 'Trend', 'Priority Score', 'Reasons']
+                all_disp['Reasons'] = all_disp['Reasons'].apply(lambda r: '; '.join(r) if isinstance(r, list) else str(r))
+                all_disp['Has Intervention'] = all_disp['Has Intervention'].map({True: 'Yes', False: 'No'})
+                all_disp['Days Since Assess.'] = all_disp['Days Since Assess.'].apply(lambda x: f"{x:.0f}" if pd.notna(x) else '--')
+                st.dataframe(all_disp, use_container_width=True, height=400)
+    else:
+        st.success("No priority students flagged at this time.")
+
+    # ── Period-Aware Growth Metrics ───────────────────────────────────────
+    st.markdown("")
+    st.subheader("Growth Metrics")
+    gp1, gp2 = st.columns([1, 3])
+    with gp1:
+        growth_period = st.selectbox("Growth Period", ["Fall → Winter", "Winter → Spring", "Fall → Spring"],
+                                      key="reading_growth_period")
+    period_map = {"Fall → Winter": ("Fall", "Winter"), "Winter → Spring": ("Winter", "Spring"),
+                  "Fall → Spring": ("Fall", "Spring")}
+    from_p, to_p = period_map[growth_period]
+    growth_df = compute_period_growth(all_scores, subject='Reading', from_period=from_p,
+                                       to_period=to_p, school_year=yr_filter)
+    summary = compute_cohort_growth_summary(growth_df)
+
+    with gp2:
+        gm1, gm2, gm3, gm4 = st.columns(4)
+        with gm1:
+            st.metric("Median Growth", f"{summary['median_growth']:+.1f}" if summary['median_growth'] is not None else "N/A")
+        with gm2:
+            st.metric("% Improving", f"{summary['pct_improving']:.0f}%")
+        with gm3:
+            st.metric("% Declining", f"{summary['pct_declining']:.0f}%")
+        with gm4:
+            st.metric("Students w/ Growth Data", summary['n'])
 
     # ── Charts (two-column) ───────────────────────────────────────────────
     st.markdown("")
@@ -614,27 +726,27 @@ def show_overview_dashboard():
             )
             st.plotly_chart(fig, width='stretch')
 
-    # ── Data Quality (collapsible) ────────────────────────────────────────
-    with st.expander("Data Quality", expanded=False):
-        dq1, dq2 = st.columns(2)
+    # ── Data Health Panel ─────────────────────────────────────────────────
+    with st.expander("Data Health", expanded=False):
+        dq1, dq2, dq3 = st.columns(3)
         latest_update = pd.to_datetime(df['calculated_at'], errors='coerce').max() if not df.empty else None
         with dq1:
             st.metric("Last Updated",
                       latest_update.strftime('%Y-%m-%d %H:%M') if pd.notna(latest_update) else "N/A")
-            st.metric("Students Assessed", f"{students_with_scores} of {total_students}")
+            st.metric("Students Assessed", f"{health['assessed_count']} of {health['total_students']}")
+            st.metric("Assessment Coverage", f"{health['assessed_pct']:.0f}%")
         with dq2:
-            conn = get_db_connection()
-            missing_q = ("SELECT s.grade_level as Grade, "
-                         "COALESCE(s.class_name,'Unassigned') as Class, "
-                         "COUNT(DISTINCT s.student_id) as Missing "
-                         "FROM students s LEFT JOIN literacy_scores ls "
-                         "ON ls.student_id=s.student_id AND ls.school_year=s.school_year "
-                         "WHERE " + where_clause + " AND ls.score_id IS NULL "
-                         "GROUP BY s.grade_level, s.class_name ORDER BY s.grade_level")
-            missing_df = pd.read_sql_query(missing_q, conn, params=params)
-            conn.close()
-            if not missing_df.empty:
-                st.markdown("**Missing Assessments**")
-                st.dataframe(missing_df, width='stretch', height=160)
-            else:
-                st.success("All students have assessment data.")
+            st.metric("Missing Scores", health['missing_scores_count'])
+            st.metric("Invalid Range Scores", health['invalid_range_count'])
+            st.metric("Duplicate Assessments", health['duplicate_count'])
+        with dq3:
+            st.metric("NULL-vs-Zero Issues", health['null_vs_zero_issues'],
+                      help="Assessments where normalized score is 0 but raw score is empty/null")
+            st.metric("Median Days Since Assessment",
+                      f"{health['median_days_since_assessment']:.0f}" if health['median_days_since_assessment'] is not None else "N/A")
+            st.metric(f"% Overdue (>{health['overdue_threshold_days']}d)", f"{health['pct_overdue']:.0f}%")
+
+        if health['missing_scores_students']:
+            st.markdown("**Students Missing Scores:**")
+            st.caption(", ".join(health['missing_scores_students'][:30])
+                       + ("..." if len(health['missing_scores_students']) > 30 else ""))

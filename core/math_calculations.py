@@ -144,7 +144,15 @@ def calculate_overall_math_score(components: Dict[str, float], grade_level: str 
     component_scores = {}
     
     # Adjust weights based on grade level
-    if grade_level == 'First':
+    if grade_level == 'Kindergarten':
+        # Kindergarten: only computation available
+        weights = {
+            'computation': 1.0,
+            'concepts': 0.0,
+            'number_fluency': 0.0,
+            'quantity_discrimination': 0.0,
+        }
+    elif grade_level == 'First':
         # Use all components for 1st grade
         weights = COMPONENT_WEIGHTS
     else:

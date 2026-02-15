@@ -12,8 +12,8 @@ from core.database import (
 )
 from core.math_calculations import calculate_math_trend
 from core.math_benchmarks import (
-    get_math_benchmark_status, get_math_support_level,
-    math_benchmark_color, math_benchmark_emoji,
+    get_math_benchmark_status, get_math_support_level, get_math_benchmark_thresholds,
+    math_benchmark_color, math_benchmark_emoji, get_math_typical_growth,
     MATH_MEASURE_LABELS, MATH_MEASURES_BY_GRADE, GRADE_ALIASES, PERIOD_MAP,
 )
 
@@ -210,6 +210,133 @@ def show_math_student_detail():
     with k5:
         st.metric("Interventions", len(active_interventions))
 
+    # ── Domain Priority Summary ──────────────────────────────────────────
+    if latest_score:
+        st.markdown("")
+        st.subheader("Domain Priority")
+        st.caption("Math domains ranked by benchmark performance to guide intervention focus.")
+
+        domain_results = []
+        if not assessments_df.empty:
+            g_alias = GRADE_ALIASES.get(latest_score.get('grade_level', ''), '')
+            p_alias = PERIOD_MAP.get(latest_score.get('assessment_period', ''), '')
+            # Check key domains: Computation vs Concepts vs sub-measures
+            domain_measures = ['Math_Computation', 'Math_Concepts_Application']
+            if g_alias == '1':
+                domain_measures += ['NIF', 'NNF', 'AQD', 'MNF']
+
+            for m in domain_measures:
+                m_df = assessments_df[assessments_df['assessment_type'] == m]
+                if not m_df.empty:
+                    try:
+                        raw_float = float(m_df.iloc[-1].get('score_value', 0))
+                    except (ValueError, TypeError):
+                        raw_float = m_df.iloc[-1].get('score_normalized')
+                    if raw_float is not None:
+                        bm = get_math_benchmark_status(m, latest_score['grade_level'],
+                                                       latest_score['assessment_period'], raw_float)
+                        thresholds = get_math_benchmark_thresholds(m, latest_score['grade_level'],
+                                                                   latest_score['assessment_period'])
+                        domain_results.append({
+                            'measure': m,
+                            'label': MATH_MEASURE_LABELS.get(m, m),
+                            'score': raw_float,
+                            'benchmark': bm or 'N/A',
+                            'thresholds': thresholds,
+                        })
+
+        if domain_results:
+            severity = {'Well Below Benchmark': 0, 'Below Benchmark': 1,
+                        'At Benchmark': 2, 'Above Benchmark': 3, 'N/A': 4}
+            domain_results.sort(key=lambda x: (severity.get(x['benchmark'], 4), x['score']))
+
+            for dr in domain_results:
+                primary_tag = " -- **PRIMARY FOCUS**" if dr == domain_results[0] and dr['benchmark'] in ('Below Benchmark', 'Well Below Benchmark') else ""
+                st.markdown(f"  {dr['label']}: **{dr['score']:.0f}** ({dr['benchmark']}){primary_tag}")
+
+    # ── Measurement Context ──────────────────────────────────────────────
+    if latest_score:
+        grade_display = latest_score.get('grade_level', 'N/A')
+        period_display = latest_score.get('assessment_period', 'N/A')
+        st.caption(f"Grade {grade_display}, {period_display} assessment using Acadience Math benchmarks")
+
+        # Show specific benchmark thresholds for primary domain
+        if domain_results:
+            primary = domain_results[0]
+            thr = primary.get('thresholds')
+            if thr:
+                st.caption(
+                    f"Benchmark thresholds for {primary['label']}: "
+                    f"At Benchmark >= {thr['benchmark_goal']:.0f}, "
+                    f"Below >= {thr['cut_point_risk']:.0f}"
+                )
+
+    # ── Next Steps Panel ──────────────────────────────────────────────────
+    if latest_score and support_tier != 'Unknown':
+        st.markdown("")
+        st.subheader("Next Steps")
+        st.caption("Programmatic recommendations based on current math data.")
+
+        deficit_measure = None
+        deficit_label = None
+        if domain_results:
+            for dr in domain_results:
+                if dr['benchmark'] in ('Below Benchmark', 'Well Below Benchmark'):
+                    deficit_measure = dr['measure']
+                    deficit_label = dr['label']
+                    break
+
+        ns1, ns2 = st.columns(2)
+        with ns1:
+            if deficit_measure:
+                st.markdown(f"**Primary Deficit:** {deficit_label}")
+                st.markdown(f"**Recommended Focus:** Targeted {deficit_label.lower()} practice")
+            else:
+                st.caption("No specific math deficit identified at this time.")
+
+            # Reassessment window
+            if not assessments_df.empty and 'assessment_date' in assessments_df.columns:
+                last_date = pd.to_datetime(assessments_df['assessment_date'].dropna()).max()
+                if pd.notna(last_date):
+                    from datetime import timedelta
+                    reassess_start = last_date + timedelta(weeks=6)
+                    reassess_end = reassess_start + timedelta(weeks=2)
+                    st.markdown(f"**Reassessment Window:** {reassess_start.strftime('%b %d')} - "
+                               f"{reassess_end.strftime('%b %d, %Y')}")
+
+        with ns2:
+            # Growth target relative to typical norms
+            if deficit_measure and latest_score:
+                typical = get_math_typical_growth(deficit_measure, latest_score['grade_level'],
+                                                  latest_score['assessment_period'], 'Spring')
+                if typical is not None:
+                    if 'Intensive' in support_tier:
+                        target = typical * 1.5
+                        st.markdown(f"**Growth Target:** +{target:.0f} points (1.5x typical of {typical:.0f})")
+                    elif 'Strategic' in support_tier:
+                        target = typical * 1.15
+                        st.markdown(f"**Growth Target:** +{target:.0f} points (1.15x typical of {typical:.0f})")
+                else:
+                    st.caption("Typical growth norms not available for this measure/grade/period.")
+
+            # Intervention alignment
+            if not active_interventions.empty and deficit_measure:
+                has_aligned = False
+                if 'focus_skill' in active_interventions.columns:
+                    aligned = active_interventions[active_interventions['focus_skill'] == deficit_measure]
+                    if not aligned.empty:
+                        has_aligned = True
+                        inv = aligned.iloc[0]
+                        mpw = inv.get('minutes_per_week', inv.get('duration_minutes', ''))
+                        st.markdown(f"**Current Intervention:** {inv['intervention_type']} "
+                                   f"({mpw} min/wk) -- aligned with deficit: Yes")
+                if not has_aligned:
+                    inv = active_interventions.iloc[0]
+                    st.markdown(f"**Current Intervention:** {inv['intervention_type']} "
+                               f"-- alignment with {deficit_label or 'deficit'}: **Check focus skill**")
+            elif active_interventions.empty and support_tier in ('Strategic (Tier 2)', 'Intensive (Tier 3)'):
+                st.warning("No active intervention for a student needing support. Consider starting one.")
+
     # ── Progress Chart ─────────────────────────────────────────────────────
     st.markdown("")
     if not all_scores_df.empty:
@@ -319,6 +446,48 @@ def show_math_student_detail():
                 'Benchmark': _BM_STATUS_BG,
                 'Tier': _TIER_BG,
             }, max_height=250), unsafe_allow_html=True)
+
+    # ── Interventions ─────────────────────────────────────────────────────
+    with st.expander("Interventions", expanded=False):
+        if not interventions_df.empty:
+            disp_cols = ['intervention_type', 'status', 'start_date']
+            disp_names = ['Type', 'Status', 'Start']
+            if 'focus_skill' in interventions_df.columns and interventions_df['focus_skill'].notna().any():
+                disp_cols.append('focus_skill')
+                disp_names.append('Focus Skill')
+            if 'delivery_type' in interventions_df.columns and interventions_df['delivery_type'].notna().any():
+                disp_cols.append('delivery_type')
+                disp_names.append('Delivery')
+            if 'minutes_per_week' in interventions_df.columns and interventions_df['minutes_per_week'].notna().any():
+                disp_cols.append('minutes_per_week')
+                disp_names.append('Min/Wk')
+            else:
+                disp_cols.extend(['frequency', 'duration_minutes'])
+                disp_names.extend(['Frequency', 'Min/Session'])
+
+            disp_int = interventions_df[disp_cols].copy()
+            disp_int.columns = disp_names
+
+            # Pre/post score deltas
+            if 'pre_score' in interventions_df.columns and 'post_score' in interventions_df.columns:
+                has_scores = interventions_df[['pre_score', 'post_score']].notna().any().any()
+                if has_scores:
+                    deltas = []
+                    for _, r in interventions_df.iterrows():
+                        pre = r.get('pre_score')
+                        post = r.get('post_score')
+                        if pd.notna(pre) and pd.notna(post):
+                            delta = post - pre
+                            deltas.append(f"{pre:.0f} → {post:.0f} ({delta:+.0f})")
+                        elif pd.notna(pre):
+                            deltas.append(f"Pre: {pre:.0f} (in progress)")
+                        else:
+                            deltas.append('--')
+                    disp_int['Score Change'] = deltas
+
+            st.dataframe(disp_int, use_container_width=True, height=180)
+        else:
+            st.info("No interventions recorded.")
 
     # ── Assessment History ─────────────────────────────────────────────────
     with st.expander("Assessment History", expanded=False):
