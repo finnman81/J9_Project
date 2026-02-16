@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+/* =============================================================================
+   Design tokens are injected into :root by ThemeProvider (design-tokens.ts + theme).
+   Aliases below keep existing var() names working and map to token set.
+   ============================================================================= */
+
+:root {
+  /* Aliases: map legacy/component names to canonical tokens */
+  --font-family: var(--font-family-sans);
+  --content-max-width: var(--layout-container-max);
+  --section-gap: var(--layout-section-gap);
+  --radius-card: var(--card-radius);
+  --radius-button: var(--button-radius);
+  --shadow-card: var(--card-shadow);
+  --shadow-card-urgent: var(--shadow-md);
+  --card-padding: var(--card-padding);
+  --card-padding-urgent: var(--kpi-card-padding);
+  --table-cell-padding-comfortable: var(--layout-gutter) 20px;
+  --table-cell-padding-compact: var(--space-3) var(--space-4);
+  --table-header-padding-y: var(--space-4);
+  /* Typography aliases for dashboard/component usage */
+  --page-title-size: var(--font-size-4xl);
+  --page-title-weight: var(--font-weight-bold);
+  --page-title-line-height: var(--font-line-height-tight);
+  --context-line-size: var(--font-size-sm);
+  --context-line-weight: var(--font-weight-medium);
+  --section-title-size: var(--font-size-xl);
+  --section-title-weight: var(--font-weight-bold);
+  --section-title-line-height: var(--font-line-height-snug);
+  --card-label-size: var(--kpi-card-label-size);
+  --card-label-weight: var(--font-weight-semibold);
+  --label-size: var(--kpi-card-label-size);
+  --caption-size: var(--font-size-sm);
+  --muted-helper-size: var(--font-size-sm);
+  --muted-helper-weight: var(--font-weight-medium);
+  --kpi-number-size: var(--kpi-card-value-size);
+  --kpi-number-weight: var(--font-weight-bold);
+  --kpi-urgent-number-size: var(--kpi-card-value-size);
+  --body-size: var(--font-size-md);
+  --body-weight: var(--font-weight-medium);
+  --body-line-height: var(--font-line-height-normal);
+  --table-text-size: var(--table-font-size);
+  --table-text-weight: var(--font-weight-medium);
+  --table-name-size: var(--font-size-lg);
+  --table-name-weight: var(--font-weight-semibold);
+  --table-score-size: var(--table-font-size);
+  --button-text-size: var(--button-font-size);
+  --button-text-weight: var(--button-font-weight);
+  --chip-text-size: var(--font-size-sm);
+  --chip-text-weight: var(--font-weight-semibold);
+  --chip-padding: 6px 12px;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--font-line-height-normal);
+  background-color: var(--color-bg-app);
+  color: var(--color-text-primary);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Table row hover from design token */
+.tr-hover-bg:hover {
+  background-color: var(--table-row-hover-bg);
+}

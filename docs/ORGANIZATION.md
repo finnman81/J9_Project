@@ -32,17 +32,21 @@ Utility and migration scripts:
 - `generate_sample_data.py` - Sample data generation
 - `generate_historical_data.py` - Historical data generation
 - `generate_student_detail_data.py` - Student detail data generation
+- `generate_sample_tier_trend_interventions_goals_notes.py` - Sample Tier/Risk (benchmark_thresholds), Trend (extra assessments), interventions (at-risk), goals, notes
 - `update_support_tier_distribution.py` - Support tier updates
 
 ### `/schema/`
 Database schema files:
 - `supabase_schema.sql` - Main database schema
 - `supabase_schema_math.sql` - Math-specific schema additions
+- `enrollment_identity_migration.md` - Enrollment/student identity model (students_core, student_enrollments, student_id_map)
 
 ### `/docs/`
 Documentation files:
 - `DEPLOY.md` - Deployment instructions
 - `SYSTEM_DESIGN.md` - System design documentation
+- `STUDENT_DETAIL_DATA_AND_API.md` - How Student Detail data is retrieved (API) and displayed (frontend)
+- `STUDENT_DETAIL_API_TRACE.md` - Student Detail API trace and troubleshooting
 - `ORGANIZATION.md` - This file
 
 ### `/data/`
@@ -50,6 +54,20 @@ Data files and resources:
 - Excel files (`.xlsx`)
 - PDF documents
 - Other data files
+
+### `/api/`
+FastAPI backend (used by the new web app on the **ui-project** branch):
+- `main.py` — FastAPI app, CORS, routers
+- `routers/` — students, assessments, interventions, dashboard, teacher
+- `serializers.py` — JSON serialization for pandas/NumPy
+- `requirements.txt` — fastapi, uvicorn, python-multipart
+
+### `/web/`
+React + TypeScript + Tailwind frontend (ui-project branch):
+- `src/themes/` — theme contract, Peck theme, ThemeProvider
+- `src/api/client.ts` — API client and types
+- `src/components/` — Layout, RiskBadge
+- `src/pages/` — OverviewDashboard, StudentDetail, GradeEntry, TeacherDashboard
 
 ### `/pages/`
 Streamlit page modules:

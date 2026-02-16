@@ -162,27 +162,32 @@ Create a composite score that combines:
 
 ## Data Model Design
 
-### Core Tables
-1. **Students**
-   - Student ID, Name, Grade, School Year
-   - Demographics (optional, for equity analysis)
+### Enrollment & Student Identity (Current Production Model)
+
+The system uses a **decoupled identity model** so that one person has a stable identity across years and grade changes. See **`schema/enrollment_identity_migration.md`** for full details.
+
+- **`students_core`** — Stable identity: one row per person (`student_uuid`, `display_name`, `active`).
+- **`student_enrollments`** — Context: one row per grade/year/class assignment (`enrollment_id`, `student_uuid`, `school_year`, `grade_level`, `class_name`, `teacher_name`).
+- **`student_id_map`** — Bridge from legacy `student_id` (int) to `student_uuid` for phased migration.
+- **Assessments** link to **`enrollment_id`** (and optionally keep `student_id` during migration).
+- **Literacy/math scores and interventions** still keyed by legacy `student_id`; resolved from enrollment via `legacy_student_id`.
+
+**UI/API:** The frontend uses **enrollment_id** for list and detail. Student Detail loads by **`/app/:subject/enrollment/:enrollmentId`**. Dashboard rows show **display_name** and link to the enrollment detail page.
+
+### Legacy / Supporting Tables
+
+1. **Students** (legacy, kept for backward compatibility)
+   - Student ID, Name, Grade, School Year, Class, Teacher
+   - Still used for filter options and fallback when enrollment tables are not present.
 
 2. **Assessments**
-   - Assessment ID, Name, Type, Grade Level
-   - Assessment metadata (date ranges, benchmarks)
+   - Assessment ID, **enrollment_id** (preferred), student_id (legacy), Type, Period, School Year, scores, etc.
 
-3. **Assessment Scores**
-   - Student ID, Assessment ID, Score, Date
-   - Raw score, normalized score, percentile
+3. **Literacy Scores / Math Scores** (calculated)
+   - student_id (legacy), School Year, Period, Overall Score, components, risk level, trend.
 
-4. **Literacy Scores** (calculated)
-   - Student ID, Date, Overall Score
-   - Component scores (reading, phonics, spelling, etc.)
-   - Risk level, Trend
-
-5. **Interventions**
-   - Student ID, Intervention Type, Start Date
-   - Status, Notes, Outcomes
+4. **Interventions**
+   - Student ID (legacy), Type, Start/End Date, Status, Notes.
 
 ### Calculated Fields
 - Overall Literacy Score (composite)

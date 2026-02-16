@@ -13,7 +13,6 @@ import numpy as np
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import os
-import streamlit as st
 
 # ---------------------------------------------------------------------------
 # Register numpy types so psycopg2 can handle them as query parameters
@@ -36,23 +35,22 @@ for _np_float_type in [np.float64, np.float32, np.float16]:
 
 def get_db_connection():
     """Get PostgreSQL database connection to Supabase.
-    
-    Reads the connection string from Streamlit secrets (preferred)
-    or the DATABASE_URL environment variable as fallback.
+
+    Uses DATABASE_URL from environment first (for API/CLI). If unset, tries
+    Streamlit secrets (for Streamlit app). This allows the API to run without
+    Streamlit installed.
     """
-    db_url = None
-    # Try Streamlit secrets first
-    try:
-        db_url = st.secrets["DATABASE_URL"]
-    except Exception:
-        pass
-    # Fallback to env var
+    db_url = os.environ.get("DATABASE_URL")
     if not db_url:
-        db_url = os.environ.get("DATABASE_URL")
+        try:
+            import streamlit as st
+            db_url = st.secrets.get("DATABASE_URL") or st.secrets["DATABASE_URL"]
+        except Exception:
+            pass
     if not db_url:
         raise RuntimeError(
-            "DATABASE_URL not found. Set it in .streamlit/secrets.toml "
-            "or as an environment variable."
+            "DATABASE_URL not found. Set it as an environment variable "
+            "or in .streamlit/secrets.toml for Streamlit."
         )
     conn = psycopg2.connect(db_url)
     return conn
@@ -385,6 +383,42 @@ def get_student_goals(student_id: int) -> pd.DataFrame:
     conn.close()
     return df
 
+
+def get_enrollment_notes(enrollment_id: str) -> pd.DataFrame:
+    """Get teacher notes for an enrollment (by enrollment_id; fallback legacy_student_id)."""
+    conn = get_db_connection()
+    try:
+        df = pd.read_sql_query(
+            'SELECT * FROM teacher_notes WHERE enrollment_id = %s ORDER BY COALESCE(note_date, created_at) DESC',
+            conn, params=[enrollment_id],
+        )
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    if df.empty:
+        en = get_enrollment(enrollment_id)
+        if en and en.get("legacy_student_id") is not None:
+            return get_teacher_notes(int(en["legacy_student_id"]))
+    return df
+
+
+def get_enrollment_goals(enrollment_id: str) -> pd.DataFrame:
+    """Get goals for an enrollment (by enrollment_id; fallback legacy_student_id)."""
+    conn = get_db_connection()
+    try:
+        df = pd.read_sql_query(
+            'SELECT * FROM student_goals WHERE enrollment_id = %s ORDER BY created_at DESC',
+            conn, params=[enrollment_id],
+        )
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    if df.empty:
+        en = get_enrollment(enrollment_id)
+        if en and en.get("legacy_student_id") is not None:
+            return get_student_goals(int(en["legacy_student_id"]))
+    return df
+
 # ---------------------------------------------------------------------------
 # Interventions
 # ---------------------------------------------------------------------------
@@ -454,7 +488,7 @@ def save_literacy_score(student_id: int, school_year: str, assessment_period: st
 
 def get_all_students(grade_level: str = None, class_name: str = None,
                      teacher_name: str = None, school_year: str = None) -> pd.DataFrame:
-    """Get all students with optional filters."""
+    """Get all students with optional filters. Legacy: reads from students table."""
     conn = get_db_connection()
     query = 'SELECT * FROM students WHERE 1=1'
     params: list = []
@@ -476,6 +510,137 @@ def get_all_students(grade_level: str = None, class_name: str = None,
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
     return df
+
+
+def get_legacy_student_uuids(legacy_student_ids: List[int]) -> Dict[int, str]:
+    """Return mapping legacy_student_id -> student_uuid from student_id_map."""
+    if not legacy_student_ids:
+        return {}
+    conn = get_db_connection()
+    placeholders = ','.join(['%s'] * len(legacy_student_ids))
+    query = f"SELECT legacy_student_id, student_uuid FROM student_id_map WHERE legacy_student_id IN ({placeholders})"
+    try:
+        df = pd.read_sql_query(query, conn, params=legacy_student_ids)
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    if df.empty:
+        return {}
+    return dict(zip(df["legacy_student_id"].astype(int), df["student_uuid"].astype(str)))
+
+
+# ---------------------------------------------------------------------------
+# Enrollment-based helpers (students_core + student_enrollments)
+# Use these for dashboard and detail views; legacy scores/interventions via legacy_student_id.
+# ---------------------------------------------------------------------------
+
+def _enrollment_base_query(extra_select: str = ""):
+    """Base query: student_enrollments JOIN students_core, resolve legacy_student_id from student_id_map."""
+    return f"""
+        SELECT e.enrollment_id, e.student_uuid, c.display_name, e.school_year, e.grade_level,
+               e.class_name, e.teacher_name
+               {extra_select}
+        FROM student_enrollments e
+        JOIN students_core c ON c.student_uuid = e.student_uuid
+        LEFT JOIN LATERAL (
+            SELECT legacy_student_id FROM student_id_map m WHERE m.student_uuid = e.student_uuid LIMIT 1
+        ) m ON true
+    """.strip()
+
+
+def get_all_enrollments(grade_level: str = None, class_name: str = None,
+                        teacher_name: str = None, school_year: str = None) -> pd.DataFrame:
+    """Get all enrollments with optional filters. Returns enrollment_id, display_name, grade_level, class_name, teacher_name, school_year, legacy_student_id."""
+    conn = get_db_connection()
+    extra = ", m.legacy_student_id"
+    query = _enrollment_base_query(extra) + " WHERE 1=1"
+    params: list = []
+    if grade_level:
+        query += " AND e.grade_level = %s"
+        params.append(grade_level)
+    if class_name:
+        query += " AND e.class_name = %s"
+        params.append(class_name)
+    if teacher_name:
+        query += " AND e.teacher_name = %s"
+        params.append(teacher_name)
+    if school_year:
+        query += " AND e.school_year = %s"
+        params.append(school_year)
+    query += " ORDER BY c.display_name, e.grade_level, e.school_year"
+    try:
+        df = pd.read_sql_query(query, conn, params=params)
+    except Exception:
+        conn.close()
+        return pd.DataFrame()
+    conn.close()
+    return df
+
+
+def get_enrollment(enrollment_id: str):
+    """Get one enrollment by UUID with display_name and legacy_student_id. Returns dict or None."""
+    conn = get_db_connection()
+    cur = _dict_cursor(conn)
+    extra = ", m.legacy_student_id"
+    query = _enrollment_base_query(extra) + " WHERE e.enrollment_id = %s"
+    try:
+        cur.execute(query, (enrollment_id,))
+        row = cur.fetchone()
+    except Exception:
+        row = None
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_enrollment_assessments(enrollment_id: str, school_year: str = None) -> pd.DataFrame:
+    """Get assessments for an enrollment (by enrollment_id). Falls back to legacy student_id if enrollment_id column missing."""
+    conn = get_db_connection()
+    params: list = [enrollment_id]
+    query = """
+        SELECT a.*, e.grade_level
+        FROM assessments a
+        LEFT JOIN student_enrollments e ON e.enrollment_id = a.enrollment_id
+        WHERE a.enrollment_id = %s
+    """
+    if school_year:
+        query += " AND a.school_year = %s"
+        params.append(school_year)
+    query += " ORDER BY a.assessment_date DESC NULLS LAST, a.assessment_period"
+    try:
+        df = pd.read_sql_query(query, conn, params=params)
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    if df.empty and get_enrollment(enrollment_id):
+        en = get_enrollment(enrollment_id)
+        leg_id = en.get("legacy_student_id")
+        if leg_id is not None:
+            df = get_student_assessments(int(leg_id), school_year=school_year)
+    return df
+
+
+def get_enrollment_interventions(enrollment_id: str) -> pd.DataFrame:
+    """Get interventions for the student in this enrollment (via legacy_student_id)."""
+    en = get_enrollment(enrollment_id)
+    if not en or en.get("legacy_student_id") is None:
+        return pd.DataFrame()
+    return get_student_interventions(int(en["legacy_student_id"]))
+
+
+def get_latest_literacy_score_for_enrollment(enrollment_id: str, school_year: str = None) -> Optional[Dict]:
+    """Latest literacy score for this enrollment's context (via legacy_student_id)."""
+    en = get_enrollment(enrollment_id)
+    if not en or en.get("legacy_student_id") is None:
+        return None
+    return get_latest_literacy_score(int(en["legacy_student_id"]), school_year=school_year)
+
+
+def get_latest_math_score_for_enrollment(enrollment_id: str, school_year: str = None) -> Optional[Dict]:
+    """Latest math score for this enrollment's context (via legacy_student_id)."""
+    en = get_enrollment(enrollment_id)
+    if not en or en.get("legacy_student_id") is None:
+        return None
+    return get_latest_math_score(int(en["legacy_student_id"]), school_year=school_year)
 
 
 def get_student_assessments(student_id: int, school_year: str = None) -> pd.DataFrame:
@@ -687,6 +852,342 @@ def get_all_scores(subject: str = 'Reading', school_year: str = None) -> pd.Data
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
     return df
+
+
+# ---------------------------------------------------------------------------
+# Teacher-first analytics views (v_support_status, v_priority_students, etc.)
+# Require migration_v3 + students_core/student_enrollments.
+# ---------------------------------------------------------------------------
+
+def get_v_support_status(
+    teacher_name: str = None,
+    school_year: str = None,
+    subject_area: str = None,
+    grade_level: str = None,
+    class_name: str = None,
+) -> pd.DataFrame:
+    """Query v_support_status with optional filters."""
+    conn = get_db_connection()
+    query = "SELECT * FROM public.v_support_status WHERE 1=1"
+    params: list = []
+    if teacher_name:
+        query += " AND teacher_name = %s"
+        params.append(teacher_name)
+    if school_year:
+        query += " AND school_year = %s"
+        params.append(school_year)
+    if subject_area:
+        query += " AND subject_area = %s"
+        params.append(subject_area)
+    if grade_level:
+        query += " AND grade_level = %s"
+        params.append(grade_level)
+    if class_name:
+        query += " AND class_name = %s"
+        params.append(class_name)
+    query += " ORDER BY display_name, subject_area"
+    try:
+        df = pd.read_sql_query(query, conn, params=params)
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    return df
+
+
+def get_v_priority_students(
+    teacher_name: str = None,
+    school_year: str = None,
+    subject_area: str = None,
+    grade_level: str = None,
+    class_name: str = None,
+) -> pd.DataFrame:
+    """Query v_priority_students with optional filters."""
+    conn = get_db_connection()
+    query = "SELECT * FROM public.v_priority_students WHERE 1=1"
+    params: list = []
+    if teacher_name:
+        query += " AND teacher_name = %s"
+        params.append(teacher_name)
+    if school_year:
+        query += " AND school_year = %s"
+        params.append(school_year)
+    if subject_area:
+        query += " AND subject_area = %s"
+        params.append(subject_area)
+    if grade_level:
+        query += " AND grade_level = %s"
+        params.append(grade_level)
+    if class_name:
+        query += " AND class_name = %s"
+        params.append(class_name)
+    query += " ORDER BY priority_score DESC NULLS LAST, display_name"
+    try:
+        df = pd.read_sql_query(query, conn, params=params)
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    return df
+
+
+def get_v_growth_last_two(
+    teacher_name: str = None,
+    school_year: str = None,
+    subject_area: str = None,
+    grade_level: str = None,
+    class_name: str = None,
+) -> pd.DataFrame:
+    """Query v_growth_last_two joined to enrollments for filtering."""
+    conn = get_db_connection()
+    query = """
+        SELECT g.*
+        FROM public.v_growth_last_two g
+        JOIN public.student_enrollments e ON e.enrollment_id = g.enrollment_id
+        WHERE 1=1
+    """
+    params: list = []
+    if teacher_name:
+        query += " AND e.teacher_name = %s"
+        params.append(teacher_name)
+    if school_year:
+        query += " AND g.school_year = %s"
+        params.append(school_year)
+    if subject_area:
+        query += " AND g.subject_area = %s"
+        params.append(subject_area)
+    if grade_level:
+        query += " AND e.grade_level = %s"
+        params.append(grade_level)
+    if class_name:
+        query += " AND e.class_name = %s"
+        params.append(class_name)
+    try:
+        df = pd.read_sql_query(query, conn, params=params)
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    return df
+
+
+def get_enrollment_support_status(enrollment_id: str, subject_area: str) -> Optional[Dict]:
+    """One row from v_support_status for this enrollment + subject (for detail header KPIs)."""
+    conn = get_db_connection()
+    query = "SELECT * FROM public.v_support_status WHERE enrollment_id = %s AND subject_area = %s LIMIT 1"
+    try:
+        cur = _dict_cursor(conn)
+        cur.execute(query, (enrollment_id, subject_area))
+        row = cur.fetchone()
+    except Exception:
+        row = None
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_enrollment_growth(enrollment_id: str, subject_area: str, school_year: str = None) -> Optional[Dict]:
+    """One row from v_growth_last_two for this enrollment + subject (for trend)."""
+    conn = get_db_connection()
+    query = "SELECT * FROM public.v_growth_last_two WHERE enrollment_id = %s AND subject_area = %s"
+    params: list = [enrollment_id, subject_area]
+    if school_year:
+        query += " AND school_year = %s"
+        params.append(school_year)
+    query += " LIMIT 1"
+    try:
+        cur = _dict_cursor(conn)
+        cur.execute(query, params)
+        row = cur.fetchone()
+    except Exception:
+        row = None
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_benchmark_thresholds(
+    subject_area: str = None,
+    grade_level: str = None,
+    school_year: str = None,
+) -> pd.DataFrame:
+    """Get benchmark_thresholds for distribution reference lines."""
+    conn = get_db_connection()
+    query = "SELECT * FROM public.benchmark_thresholds WHERE 1=1"
+    params: list = []
+    if subject_area:
+        query += " AND subject_area = %s"
+        params.append(subject_area)
+    if grade_level:
+        query += " AND grade_level = %s"
+        params.append(grade_level)
+    if school_year:
+        query += " AND school_year = %s"
+        params.append(school_year)
+    try:
+        df = pd.read_sql_query(query, conn, params=params)
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Multi-enrollment aggregation (student-uuid level)
+# ---------------------------------------------------------------------------
+
+def get_enrollments_for_student_uuid(student_uuid: str) -> pd.DataFrame:
+    """All enrollments for a given student_uuid, ordered by school_year DESC, grade_level."""
+    conn = get_db_connection()
+    query = """
+        SELECT e.enrollment_id, e.student_uuid, c.display_name, e.school_year, e.grade_level,
+               e.class_name, e.teacher_name
+        FROM student_enrollments e
+        JOIN students_core c ON c.student_uuid = e.student_uuid
+        WHERE e.student_uuid = %s
+        ORDER BY e.school_year DESC, e.grade_level
+    """
+    try:
+        df = pd.read_sql_query(query, conn, params=[student_uuid])
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    return df
+
+
+def get_multi_enrollment_assessments(enrollment_ids: List[str], subject_area: str = None, school_year: str = None) -> pd.DataFrame:
+    """Get assessments across multiple enrollment_ids, with optional subject/year filter."""
+    if not enrollment_ids:
+        return pd.DataFrame()
+    conn = get_db_connection()
+    placeholders = ','.join(['%s'] * len(enrollment_ids))
+    query = f"""
+        SELECT a.*, e.grade_level AS enrollment_grade, e.school_year AS enrollment_year
+        FROM assessments a
+        LEFT JOIN student_enrollments e ON e.enrollment_id = a.enrollment_id
+        WHERE a.enrollment_id::text IN ({placeholders})
+    """
+    params: list = list(enrollment_ids)
+    if subject_area:
+        query += " AND a.subject_area = %s"
+        params.append(subject_area)
+    if school_year:
+        query += " AND a.school_year = %s"
+        params.append(school_year)
+    query += " ORDER BY a.assessment_date DESC NULLS LAST, a.school_year DESC, a.assessment_period"
+    try:
+        df = pd.read_sql_query(query, conn, params=params)
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    return df
+
+
+def get_multi_enrollment_interventions(enrollment_ids: List[str]) -> pd.DataFrame:
+    """Get interventions across multiple enrollment_ids."""
+    if not enrollment_ids:
+        return pd.DataFrame()
+    conn = get_db_connection()
+    placeholders = ','.join(['%s'] * len(enrollment_ids))
+    query = f"""
+        SELECT i.*
+        FROM interventions i
+        WHERE i.enrollment_id::text IN ({placeholders})
+        ORDER BY i.start_date DESC NULLS LAST
+    """
+    try:
+        df = pd.read_sql_query(query, conn, params=enrollment_ids)
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    if df.empty:
+        # Fallback: try via legacy student_id from any of the enrollments
+        for eid in enrollment_ids:
+            en = get_enrollment(eid)
+            if en and en.get("legacy_student_id") is not None:
+                return get_student_interventions(int(en["legacy_student_id"]))
+    return df
+
+
+def get_multi_enrollment_notes(enrollment_ids: List[str]) -> pd.DataFrame:
+    """Get notes across multiple enrollment_ids."""
+    if not enrollment_ids:
+        return pd.DataFrame()
+    conn = get_db_connection()
+    placeholders = ','.join(['%s'] * len(enrollment_ids))
+    try:
+        df = pd.read_sql_query(
+            f"SELECT * FROM teacher_notes WHERE enrollment_id::text IN ({placeholders}) ORDER BY COALESCE(note_date, created_at) DESC",
+            conn, params=enrollment_ids,
+        )
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    if df.empty:
+        # Fallback via legacy student_id
+        for eid in enrollment_ids:
+            en = get_enrollment(eid)
+            if en and en.get("legacy_student_id") is not None:
+                return get_teacher_notes(int(en["legacy_student_id"]))
+    return df
+
+
+def get_multi_enrollment_goals(enrollment_ids: List[str]) -> pd.DataFrame:
+    """Get goals across multiple enrollment_ids."""
+    if not enrollment_ids:
+        return pd.DataFrame()
+    conn = get_db_connection()
+    placeholders = ','.join(['%s'] * len(enrollment_ids))
+    try:
+        df = pd.read_sql_query(
+            f"SELECT * FROM student_goals WHERE enrollment_id::text IN ({placeholders}) ORDER BY created_at DESC",
+            conn, params=enrollment_ids,
+        )
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    if df.empty:
+        for eid in enrollment_ids:
+            en = get_enrollment(eid)
+            if en and en.get("legacy_student_id") is not None:
+                return get_student_goals(int(en["legacy_student_id"]))
+    return df
+
+
+def get_multi_enrollment_support_status(enrollment_ids: List[str], subject_area: str) -> Optional[Dict]:
+    """Best support status across multiple enrollment_ids (picks the one with a latest_score)."""
+    conn = get_db_connection()
+    placeholders = ','.join(['%s'] * len(enrollment_ids))
+    query = f"""
+        SELECT * FROM public.v_support_status
+        WHERE enrollment_id::text IN ({placeholders}) AND subject_area = %s
+        ORDER BY latest_date DESC NULLS LAST
+        LIMIT 1
+    """
+    params = list(enrollment_ids) + [subject_area]
+    try:
+        cur = _dict_cursor(conn)
+        cur.execute(query, params)
+        row = cur.fetchone()
+    except Exception:
+        row = None
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_multi_enrollment_growth(enrollment_ids: List[str], subject_area: str) -> Optional[Dict]:
+    """Best growth data across multiple enrollment_ids."""
+    conn = get_db_connection()
+    placeholders = ','.join(['%s'] * len(enrollment_ids))
+    query = f"""
+        SELECT * FROM public.v_growth_last_two
+        WHERE enrollment_id::text IN ({placeholders}) AND subject_area = %s
+        LIMIT 1
+    """
+    params = list(enrollment_ids) + [subject_area]
+    try:
+        cur = _dict_cursor(conn)
+        cur.execute(query, params)
+        row = cur.fetchone()
+    except Exception:
+        row = None
+    conn.close()
+    return dict(row) if row else None
 
 
 if __name__ == '__main__':

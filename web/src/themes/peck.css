@@ -1,0 +1,5 @@
+/* Peck theme: geometric pattern for sidebar (optional) */
+.peck-pattern {
+  background-color: #315376;
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 5c0-2 2-4 5-4s5 2 5 4v8c0 2-2 4-5 4s-5-2-5-4V5zm0 20c0-2 2-4 5-4s5 2 5 4v8c0 2-2 4-5 4s-5-2-5-4v-8zm0 20c0-2 2-4 5-4s5 2 5 4v8c0 2-2 4-5 4s-5-2-5-4v-8zM5 20c2 0 4 2 4 5s-2 5-4 5H1c-2 0-4-2-4-5s2-5 4-5h4zm20 0c2 0 4 2 4 5s-2 5-4 5h-4c-2 0-4-2-4-5s2-5 4-5h4zm20 0c2 0 4 2 4 5s-2 5-4 5h-4c-2 0-4-2-4-5s2-5 4-5h4z' fill='%2345678A' fill-opacity='0.15' fill-rule='evenodd'/%3E%3C/svg%3E");
+}

@@ -29,11 +29,39 @@ python scripts/migrate_data.py
 
 ## Running the Application
 
+### Option 1: Streamlit (legacy)
+
 ```bash
 streamlit run app.py
 ```
 
 The application will open in your browser at `http://localhost:8501`
+
+### Option 2: New Web App (React + FastAPI)
+
+From the **ui-project** branch, you can run the production-style web app:
+
+1. **Set database URL** (required for the API): copy `.env.example` to `.env` in the project root and set your `DATABASE_URL`:
+   ```bash
+   copy .env.example .env
+   ```
+   Then edit `.env` and set `DATABASE_URL=postgresql://...` (your Supabase or Postgres URL). The API loads `.env` automatically via python-dotenv. Alternatively set the `DATABASE_URL` environment variable in your shell. (Streamlit can still use `.streamlit/secrets.toml`.)
+
+2. **Start the API** (from project root):
+   ```bash
+   uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+3. **Start the frontend** (in another terminal):
+   ```bash
+   cd web
+   npm install
+   npm run dev
+   ```
+   On PowerShell use `;` instead of `&&` if you combine commands (e.g. `cd web; npm run dev`).
+   The app will be at `http://localhost:5173`. It proxies `/api` and `/health` to the API.
+
+4. **Optional**: Copy `web/.env.example` to `web/.env` and set `VITE_API_URL` if the API is not on port 8000, or `VITE_THEME` to switch themes (default is `peck`).
 
 ## Database Schema
 
@@ -60,7 +88,12 @@ The application will open in your browser at `http://localhost:8501`
 2. Go to [share.streamlit.io](https://share.streamlit.io), sign in with GitHub, and click **New app**.
 3. Select your repo, branch `main`, and main file path **`app.py`**.
 
-See **[DEPLOY.md](DEPLOY.md)** for step-by-step instructions (including creating the repo under the finnman81 account).
+See **[DEPLOY.md](docs/DEPLOY.md)** for step-by-step instructions (including creating the repo under the finnman81 account).
+
+## Documentation
+
+- **[docs/](docs/)** – Design and deployment docs
+- **[docs/STUDENT_DETAIL_DATA_AND_API.md](docs/STUDENT_DETAIL_DATA_AND_API.md)** – How the Student Detail page retrieves data (API) and displays it (frontend): endpoint, subject filtering, header KPIs, and fallbacks
 
 ## Notes
 

@@ -9,6 +9,10 @@ venv/
 ENV/
 env/
 
+# Environment (API secrets – never commit .env)
+.env
+.env.local
+
 # Streamlit
 .streamlit/secrets.toml
 
