@@ -64,21 +64,32 @@ export function Analytics() {
   )
 
   useEffect(() => {
-    setLoading(true)
-    Promise.all([
-      api.getDistribution(metricsParams).catch(() => null),
-      api.getSupportTrend(metricsParams).catch(() => null),
-      api.getAssessmentAverages(assessmentAveragesParams).catch(() => null),
-      api.getErbComparison(metricsParams).catch(() => null),
-    ])
-      .then(([dist, trend, averages, erb]) => {
-        setDistribution(dist)
-        setSupportTrend(trend)
-        setAssessmentAverages(averages)
-        setErbComparison(erb)
-      })
-      .finally(() => setLoading(false))
-  }, [metricsParams.subject, metricsParams.school_year, assessmentGradeFilter])
+    let cancelled = false
+    const run = async () => {
+      await Promise.resolve()
+      if (cancelled) return
+      setLoading(true)
+      const [dist, trend, averages, erb] = await Promise.all([
+        api.getDistribution(metricsParams).catch(() => null),
+        api.getSupportTrend(metricsParams).catch(() => null),
+        api.getAssessmentAverages(assessmentAveragesParams).catch(() => null),
+        api.getErbComparison(metricsParams).catch(() => null),
+      ])
+      if (cancelled) return
+      setDistribution(dist)
+      setSupportTrend(trend)
+      setAssessmentAverages(averages)
+      setErbComparison(erb)
+      setLoading(false)
+    }
+    run().catch(() => {
+      if (cancelled) return
+      setLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [metricsParams, assessmentAveragesParams])
 
   const avgByGradeOrdered = distribution?.avg_by_grade?.length ? sortByGrade(distribution.avg_by_grade) : []
 

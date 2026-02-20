@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   api,
@@ -174,7 +174,7 @@ export function StudentDetail() {
       api.getStudentAssessments(selectedId),
       api.getStudentInterventions(selectedId),
     ])
-      .then(([s, _sc, a, i]) => {
+      .then(([s, , a, i]) => {
         setStudent(s)
         setAssessments(a.assessments)
         setInterventions(i.interventions)
@@ -283,7 +283,7 @@ export function StudentDetail() {
             const da = a.effective_date ?? (a as { assessment_date?: string }).assessment_date ?? ''
             const db = b.effective_date ?? (b as { assessment_date?: string }).assessment_date ?? ''
             return db.localeCompare(da)
-          })[scored.length - 1]
+          })[0]
         : null
     const derivedLatestScore = lastWithScore?.score_normalized != null ? Number(lastWithScore.score_normalized) : null
     const derivedLastDate = lastWithScore
@@ -313,26 +313,23 @@ export function StudentDetail() {
     }
   })()
 
-  const displayName = isUuidMode ? uuidDetail?.display_name : student?.student_name
   const hasData = isUuidMode ? Boolean(uuidDetail) : Boolean(student)
 
   // Extract unique assessment types from scoresHistory
-  const availableAssessmentTypes = (() => {
+  const availableAssessmentTypes = useMemo(() => {
     const types = new Set<string>()
     scoresHistory.forEach((item) => {
-      if (item.assessment_type) {
-        types.add(item.assessment_type)
-      }
+      if (item.assessment_type) types.add(item.assessment_type)
     })
     return Array.from(types).sort()
-  })()
+  }, [scoresHistory])
 
   // Initialize selectedAssessmentType to first type when data loads (per student)
   useEffect(() => {
     if (availableAssessmentTypes.length > 0 && !selectedAssessmentType) {
       setSelectedAssessmentType(availableAssessmentTypes[0]!)
     }
-  }, [scoresHistory.length]) // Re-initialize when scoresHistory changes (new student/data loaded)
+  }, [availableAssessmentTypes, selectedAssessmentType])
 
   // Filter scoresHistory based on selected assessment type
   const filteredScoresHistory = scoresHistory.filter((item) => {
