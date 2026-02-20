@@ -24,8 +24,8 @@ import {
 
 const SECTION_GAP = 'var(--section-gap)'
 
-/** Grade order for charts and lists: Kindergarten → First → Second → Third → Fourth */
-const GRADE_ORDER = ['Kindergarten', 'First', 'Second', 'Third', 'Fourth']
+/** Grade order for charts and lists: Kindergarten → Eighth */
+const GRADE_ORDER = ['Kindergarten', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth']
 
 function sortByGrade<T extends { grade_level: string }>(rows: T[]): T[] {
   const order = new Map(GRADE_ORDER.map((g, i) => [g, i]))
@@ -60,15 +60,20 @@ export function OverviewDashboard() {
   const [lastSynced, setLastSynced] = useState<Date | null>(null)
 
   const metricsParams: MetricsParams = useMemo(() => {
-    const schoolYear = filter.school_year === 'All' || !filter.school_year ? undefined : filter.school_year
+    const allYears = (filters?.school_years ?? []).filter((y) => y && y !== 'All')
+    const selectedYear = !filter.school_year || filter.school_year === 'All' ? undefined : filter.school_year
+    const defaultYear = allYears[0]
+    const schoolYear = selectedYear
     return {
       teacher_name: filter.teacher_name === 'All' || !filter.teacher_name ? undefined : filter.teacher_name,
-      school_year: schoolYear ?? filters?.school_years?.[0],
+      // When no specific year is selected, omit school_year so metrics aggregate across years.
+      school_year: schoolYear,
       subject: subjectParam,
       grade_level: filter.grade_level === 'All' || !filter.grade_level ? undefined : filter.grade_level,
       class_name: filter.class_name === 'All' || !filter.class_name ? undefined : filter.class_name,
       current_period: 'Fall',
-      current_school_year: schoolYear ?? filters?.school_years?.[0] ?? '2024-25',
+      // For "This window" KPI, still use a concrete current_school_year even when aggregating.
+      current_school_year: schoolYear ?? defaultYear ?? '2024-25',
     }
   }, [filter, subjectParam, filters?.school_years])
 
@@ -138,6 +143,12 @@ export function OverviewDashboard() {
     }))
   }, [distribution?.bins])
 
+  const distributionYMax = useMemo(() => {
+    if (!histogramData.length) return 50
+    const maxCount = Math.max(...histogramData.map((d) => d.count))
+    return Math.ceil(Math.max(maxCount * 1.15, 10))
+  }, [histogramData])
+
   const exportCsv = () => {
     if (!priorityRows.length) return
     const cols = ['display_name', 'grade_level', 'class_name', 'support_status', 'tier', 'has_active_intervention', 'days_since_assessment', 'trend', 'priority_score', 'reasons']
@@ -185,14 +196,14 @@ export function OverviewDashboard() {
     <div className="mx-auto" style={{ maxWidth: 'var(--content-max-width)' }}>
       <header className="flex flex-wrap items-start justify-between gap-6" style={{ marginBottom: SECTION_GAP }}>
         <div className="min-w-0">
-          <h1 className="text-[var(--color-text)] text-left" style={{ fontSize: 'var(--page-title-size)', fontWeight: 'var(--page-title-weight)', lineHeight: 'var(--page-title-line-height)', fontFamily: 'var(--font-family)' }}>
+          <h1 className="text-left" style={{ fontSize: '1.75rem', fontWeight: 700, lineHeight: 1.25, fontFamily: 'var(--font-family)', color: '#1F2937' }}>
             {title}
           </h1>
-          <p className="mt-2 opacity-70" style={{ fontSize: 'var(--context-line-size)', fontWeight: 'var(--context-line-weight)' }}>{filterSummary}</p>
+          <p className="mt-2" style={{ fontSize: 'var(--context-line-size)', fontWeight: 'var(--context-line-weight)', color: '#64748B' }}>{filterSummary}</p>
         </div>
         <div className="flex items-center gap-4 flex-shrink-0">
           {lastSynced && (
-            <span className="text-[var(--color-text)] opacity-60" style={{ fontSize: 'var(--muted-helper-size)' }}>
+            <span style={{ fontSize: 'var(--muted-helper-size)', color: '#64748B' }}>
               Last synced: {lastSynced.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
             </span>
           )}
@@ -207,7 +218,7 @@ export function OverviewDashboard() {
           <Link
             to={`/app/${subject}/grade-entry`}
             className="px-3 py-2 rounded-[var(--radius-button)] text-white transition-opacity hover:opacity-90"
-            style={{ backgroundColor: 'var(--color-primary)', fontSize: 'var(--button-text-size)', fontWeight: 'var(--button-text-weight)' }}
+            style={{ backgroundColor: '#1E3A5F', fontSize: 'var(--button-text-size)', fontWeight: 600, boxShadow: '0 1px 3px rgba(30, 58, 95, 0.25)' }}
           >
             Add assessment
           </Link>
@@ -216,8 +227,8 @@ export function OverviewDashboard() {
 
       {filters && (
         <div
-          className="flex flex-wrap items-center gap-4 py-5 px-5 rounded-[var(--radius-card)] border border-[var(--color-border)]/40"
-          style={{ marginBottom: SECTION_GAP, boxShadow: 'var(--card-shadow)', backgroundColor: 'var(--color-bg-surface-muted)' }}
+          className="flex flex-wrap items-center gap-4 py-5 px-5 rounded-lg border"
+          style={{ marginBottom: SECTION_GAP, backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', boxShadow: 'none' }}
         >
           <input
             type="search"
@@ -225,11 +236,11 @@ export function OverviewDashboard() {
             value={searchStudent}
             onChange={(e) => setSearchStudent(e.target.value)}
             className="w-44 border rounded-[var(--radius-button)] px-3 h-10 text-[var(--body-size)]"
-            style={{ borderColor: 'var(--color-border)' }}
+            style={{ borderColor: '#CBD5E1', backgroundColor: '#fff' }}
           />
           <select
             className="w-32 border rounded-[var(--radius-button)] px-3 h-10 text-[var(--body-size)]"
-            style={{ borderColor: 'var(--color-border)' }}
+            style={{ borderColor: '#CBD5E1', backgroundColor: '#fff' }}
             value={filter.grade_level ?? 'All'}
             onChange={(e) => setFilter((f) => ({ ...f, grade_level: e.target.value }))}
           >
@@ -243,7 +254,7 @@ export function OverviewDashboard() {
           </select>
           <select
             className="w-36 border rounded-[var(--radius-button)] px-3 h-10 text-[var(--body-size)]"
-            style={{ borderColor: 'var(--color-border)' }}
+            style={{ borderColor: '#CBD5E1', backgroundColor: '#fff' }}
             value={filter.class_name ?? 'All'}
             onChange={(e) => setFilter((f) => ({ ...f, class_name: e.target.value }))}
           >
@@ -253,7 +264,7 @@ export function OverviewDashboard() {
           </select>
           <select
             className="w-40 border rounded-[var(--radius-button)] px-3 h-10 text-[var(--body-size)]"
-            style={{ borderColor: 'var(--color-border)' }}
+            style={{ borderColor: '#CBD5E1', backgroundColor: '#fff' }}
             value={filter.teacher_name ?? 'All'}
             onChange={(e) => setFilter((f) => ({ ...f, teacher_name: e.target.value }))}
           >
@@ -263,7 +274,7 @@ export function OverviewDashboard() {
           </select>
           <select
             className="w-28 border rounded-[var(--radius-button)] px-3 h-10 text-[var(--body-size)]"
-            style={{ borderColor: 'var(--color-border)' }}
+            style={{ borderColor: '#CBD5E1', backgroundColor: '#fff' }}
             value={filter.school_year ?? 'All'}
             onChange={(e) => setFilter((f) => ({ ...f, school_year: e.target.value }))}
           >
@@ -271,7 +282,7 @@ export function OverviewDashboard() {
               <option key={y} value={y}>{y}</option>
             ))}
           </select>
-          <button type="button" onClick={resetFilters} className="px-3 py-2 rounded-[var(--radius-button)] border h-10" style={{ borderColor: 'var(--color-border)', color: 'var(--color-primary-accent)', fontSize: 'var(--button-text-size)', fontWeight: 'var(--button-text-weight)' }}>
+          <button type="button" onClick={resetFilters} className="px-3 py-2 rounded-[var(--radius-button)] h-10 bg-transparent border-0" style={{ color: '#1E3A5F', fontSize: 'var(--button-text-size)', fontWeight: 'var(--button-text-weight)' }}>
             Reset
           </button>
         </div>
@@ -280,66 +291,66 @@ export function OverviewDashboard() {
       {/* Top KPI row: On Track / Monitor / Needs Support + Support Gap + Coverage by window + Tier movement */}
       <div style={{ marginBottom: SECTION_GAP }}>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-[var(--card-radius)] border bg-[var(--color-bg-surface)] text-left" style={{ boxShadow: 'var(--card-shadow)', padding: 'var(--card-padding)', borderColor: kpiFilter === null ? 'var(--color-primary)' : 'var(--card-border)' }}>
-            <p className="text-[var(--label-size)] font-medium opacity-70">Total Students</p>
-            <p className="mt-2 font-bold text-[var(--color-text)]" style={{ fontSize: 'var(--kpi-number-size)' }}>{total}</p>
+          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: kpiFilter === null ? '#93C5FD' : '#E2E8F0' }}>
+            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>Total Students</p>
+            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{total}</p>
           </button>
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-[var(--card-radius)] border bg-[var(--color-bg-surface)] text-left" style={{ boxShadow: 'var(--card-shadow)', padding: 'var(--card-padding)', borderColor: 'var(--card-border)' }}>
-            <p className="text-[var(--label-size)] font-medium opacity-70">Assessed</p>
-            <p className="mt-2 font-bold text-[var(--color-text)]" style={{ fontSize: 'var(--kpi-number-size)' }}>{kpis?.assessed_pct ?? 0}%</p>
-            <p className="text-[var(--caption-size)] opacity-60 mt-1">{assessed} of {total}</p>
+          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0' }}>
+            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>Assessed</p>
+            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.assessed_pct != null ? Number(kpis.assessed_pct).toFixed(1) : '0'}%</p>
+            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{assessed} of {total}</p>
           </button>
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-[var(--card-radius)] border bg-[var(--color-bg-surface)] text-left" style={{ boxShadow: 'var(--card-shadow)', padding: 'var(--card-padding)', borderColor: 'var(--card-border)' }}>
-            <p className="text-[var(--label-size)] font-medium opacity-70">Monitor</p>
-            <p className="mt-2 font-bold text-[var(--color-text)]" style={{ fontSize: 'var(--kpi-number-size)' }}>{kpis?.monitor_count ?? 0}</p>
-            <p className="text-[var(--caption-size)] opacity-60 mt-1">{kpis?.monitor_pct ?? 0}%</p>
+          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0' }}>
+            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>Monitor</p>
+            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.monitor_count ?? 0}</p>
+            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{kpis?.monitor_pct != null ? Number(kpis.monitor_pct).toFixed(1) : '0'}%</p>
           </button>
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-[var(--card-radius)] border border-amber-300/60 bg-amber-50/90 text-left" style={{ boxShadow: 'var(--shadow-md)', padding: 'var(--kpi-card-padding)', borderColor: 'var(--card-border)' }}>
-            <p className="text-[var(--label-size)] font-bold text-amber-800/95">Needs Support</p>
-            <p className="mt-2 font-bold text-amber-900" style={{ fontSize: 'var(--kpi-urgent-number-size)' }}>{kpis?.needs_support_count ?? 0}</p>
-            <p className="text-[var(--caption-size)] text-amber-700/80 mt-1">{kpis?.needs_support_pct ?? 0}%</p>
+          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border-t-4 border bg-white text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0', borderTopColor: '#D97706' }}>
+            <p className="text-[var(--label-size)] font-semibold" style={{ color: '#92400E' }}>Needs Support</p>
+            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.needs_support_count ?? 0}</p>
+            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{kpis?.needs_support_pct != null ? Number(kpis.needs_support_pct).toFixed(1) : '0'}%</p>
           </button>
-          <button type="button" onClick={() => setKpiFilter('no_intervention')} className="min-h-[100px] flex flex-col justify-center rounded-[var(--card-radius)] border border-red-200 bg-red-50/90 text-left" style={{ boxShadow: 'var(--shadow-md)', padding: 'var(--kpi-card-padding)', borderColor: kpiFilter === 'no_intervention' ? 'var(--color-primary)' : undefined }} title="Filter: Needs Support with no active intervention">
-            <p className="text-[var(--label-size)] font-bold text-red-800/95">Support Gap</p>
-            <p className="mt-2 font-bold text-red-900" style={{ fontSize: 'var(--kpi-urgent-number-size)' }}>{kpis?.support_gap_count ?? 0}</p>
-            <p className="text-[var(--caption-size)] text-red-700/80 mt-1">{kpis?.support_gap_pct ?? 0}% · no intervention</p>
+          <button type="button" onClick={() => setKpiFilter('no_intervention')} className="min-h-[100px] flex flex-col justify-center rounded-lg border-t-4 border bg-white text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0', borderTopColor: kpiFilter === 'no_intervention' ? '#1E3A5F' : '#DC2626' }} title="Filter: Needs Support with no active intervention">
+            <p className="text-[var(--label-size)] font-semibold" style={{ color: '#991B1B' }}>Support Gap</p>
+            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.support_gap_count ?? 0}</p>
+            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{kpis?.support_gap_pct != null ? Number(kpis.support_gap_pct).toFixed(1) : '0'}% · no intervention</p>
           </button>
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-[var(--card-radius)] border bg-[var(--color-bg-surface)] text-left" style={{ boxShadow: 'var(--card-shadow)', padding: 'var(--card-padding)', borderColor: 'var(--card-border)' }}>
-            <p className="text-[var(--label-size)] font-medium opacity-70">Intervention Coverage</p>
-            <p className="mt-2 font-bold text-[var(--color-text)]" style={{ fontSize: 'var(--kpi-number-size)' }}>{kpis?.intervention_coverage_pct ?? 0}%</p>
-            <p className="text-[var(--caption-size)] opacity-60 mt-1">{kpis?.intervention_coverage_count ?? 0} of {kpis?.needs_support_count || 0}</p>
+          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0' }}>
+            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>Intervention Coverage</p>
+            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.intervention_coverage_pct != null ? Number(kpis.intervention_coverage_pct).toFixed(1) : '0'}%</p>
+            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{kpis?.intervention_coverage_count ?? 0} of {kpis?.needs_support_count || 0}</p>
           </button>
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-[var(--card-radius)] border bg-[var(--color-bg-surface)] text-left" style={{ boxShadow: 'var(--card-shadow)', padding: 'var(--card-padding)', borderColor: 'var(--card-border)' }} title="% assessed in current window (e.g. Fall)">
-            <p className="text-[var(--label-size)] font-medium opacity-70">% This window</p>
-            <p className="mt-2 font-bold text-[var(--color-text)]" style={{ fontSize: 'var(--kpi-number-size)' }}>{kpis?.assessed_this_window_pct ?? 0}%</p>
-            <p className="text-[var(--caption-size)] opacity-60 mt-1">{kpis?.assessed_this_window_count ?? 0} of {total}</p>
+          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0' }} title="% assessed in current window (e.g. Fall)">
+            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>% This window</p>
+            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.assessed_this_window_pct != null ? Number(kpis.assessed_this_window_pct).toFixed(1) : '0'}%</p>
+            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{kpis?.assessed_this_window_count ?? 0} of {total}</p>
           </button>
-          <button type="button" onClick={() => setKpiFilter('overdue')} className="min-h-[100px] flex flex-col justify-center rounded-[var(--card-radius)] border bg-[var(--color-bg-surface)] text-left" style={{ boxShadow: 'var(--card-shadow)', padding: 'var(--card-padding)', borderColor: kpiFilter === 'overdue' ? 'var(--color-primary)' : 'var(--card-border)' }}>
-            <p className="text-[var(--label-size)] font-medium opacity-70">Median Days Since</p>
-            <p className="mt-2 font-bold text-[var(--color-text)]" style={{ fontSize: 'var(--kpi-number-size)' }}>{kpis?.median_days_since_assessment != null ? Math.round(kpis.median_days_since_assessment) : '—'}</p>
+          <button type="button" onClick={() => setKpiFilter('overdue')} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: kpiFilter === 'overdue' ? '#1E3A5F' : '#E2E8F0' }}>
+            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>Median Days Since</p>
+            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.median_days_since_assessment != null ? Number(kpis.median_days_since_assessment).toFixed(1) : '—'}</p>
           </button>
-          <button type="button" onClick={() => setKpiFilter('overdue')} className="min-h-[100px] flex flex-col justify-center rounded-[var(--card-radius)] border bg-[var(--color-bg-surface)] text-left" style={{ boxShadow: 'var(--card-shadow)', padding: 'var(--card-padding)', borderColor: kpiFilter === 'overdue' ? 'var(--color-primary)' : 'var(--card-border)' }}>
-            <p className="text-[var(--label-size)] font-medium opacity-70">% Overdue (&gt;90d)</p>
-            <p className="mt-2 font-bold text-[var(--color-text)]" style={{ fontSize: 'var(--kpi-number-size)' }}>{kpis?.overdue_pct ?? 0}%</p>
-            <p className="text-[var(--caption-size)] opacity-60 mt-1">{kpis?.overdue_count ?? 0} students</p>
+          <button type="button" onClick={() => setKpiFilter('overdue')} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: kpiFilter === 'overdue' ? '#1E3A5F' : '#E2E8F0' }}>
+            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>% Overdue (&gt;90d)</p>
+            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.overdue_pct != null ? Number(kpis.overdue_pct).toFixed(1) : '0'}%</p>
+            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{kpis?.overdue_count ?? 0} students</p>
           </button>
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-[var(--card-radius)] border bg-[var(--color-bg-surface-muted)] text-left" style={{ boxShadow: 'var(--card-shadow)', padding: 'var(--card-padding)', borderColor: 'var(--card-border)' }} title="Tier movement (when tier history is populated)">
-            <p className="text-[var(--label-size)] font-medium opacity-70">Tier movement</p>
-            <p className="mt-2 font-bold text-[var(--color-text)]" style={{ fontSize: 'var(--kpi-number-size)' }}>
+          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0' }} title="Tier movement (when tier history is populated)">
+            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>Tier movement</p>
+            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>
               {(kpis?.tier_moved_down_count ?? 0) > 0 || (kpis?.tier_moved_up_count ?? 0) > 0
                 ? `↓${kpis?.tier_moved_down_count ?? 0} ↑${kpis?.tier_moved_up_count ?? 0}`
                 : '—'}
             </p>
-            <p className="text-[var(--caption-size)] opacity-60 mt-1">Down better · Up worse</p>
+            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>Down better · Up worse</p>
           </button>
         </div>
       </div>
 
       {/* Priority Students (hero) */}
       <div style={{ marginBottom: SECTION_GAP }}>
-        <div className="rounded-[var(--card-radius)] border overflow-hidden" style={{ boxShadow: 'var(--card-shadow)', backgroundColor: 'var(--color-bg-surface)', borderColor: 'var(--card-border)' }}>
-          <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 border-b" style={{ borderColor: 'var(--table-border)' }}>
-            <h2 className="font-semibold text-[var(--color-text)]" style={{ fontSize: 'var(--section-title-size)', fontFamily: 'var(--font-family)' }}>
+        <div className="rounded-lg border overflow-hidden" style={{ boxShadow: 'none', backgroundColor: '#F7F9FB', borderColor: '#E2E8F0' }}>
+          <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 border-b" style={{ borderColor: '#E2E8F0' }}>
+            <h2 className="font-semibold" style={{ fontSize: 'var(--section-title-size)', fontFamily: 'var(--font-family)', color: '#1F2937' }}>
               Priority Students
             </h2>
             <div className="flex flex-wrap items-center gap-2">
@@ -362,16 +373,16 @@ export function OverviewDashboard() {
           </div>
           <div className="overflow-x-auto max-h-[560px] overflow-y-auto">
             <table className="w-full" style={{ fontSize: 'var(--table-text-size)' }}>
-              <thead className="sticky top-0 z-10 text-left" style={{ backgroundColor: 'var(--table-header-bg)', borderBottom: '2px solid var(--table-border)' }}>
+              <thead className="sticky top-0 z-10 text-left" style={{ backgroundColor: '#E2E8F0', borderBottom: '2px solid #CBD5E1' }}>
                 <tr>
-                  <th className="font-semibold text-[var(--color-text)] py-3 px-4">Name</th>
-                  <th className="font-semibold text-[var(--color-text)] py-3 px-4 text-center">Support Status</th>
-                  <th className="font-semibold text-[var(--color-text)] py-3 px-4 text-center">Tier</th>
-                  <th className="font-semibold text-[var(--color-text)] py-3 px-4 text-center">Has intervention</th>
-                  <th className="font-semibold text-[var(--color-text)] py-3 px-4 text-center">Days since assessment</th>
-                  <th className="font-semibold text-[var(--color-text)] py-3 px-4 text-center">Trend</th>
-                  <th className="font-semibold text-[var(--color-text)] py-3 px-4 text-center">Priority score</th>
-                  <th className="font-semibold text-[var(--color-text)] py-3 px-4">Reasons</th>
+                  <th className="font-semibold py-2.5 px-4" style={{ color: '#1F2937' }}>Name</th>
+                  <th className="font-semibold py-2.5 px-4 text-center" style={{ color: '#1F2937' }}>Support Status</th>
+                  <th className="font-semibold py-2.5 px-4 text-center" style={{ color: '#1F2937' }}>Tier</th>
+                  <th className="font-semibold py-2.5 px-4 text-center" style={{ color: '#1F2937' }}>Has intervention</th>
+                  <th className="font-semibold py-2.5 px-4 text-center" style={{ color: '#1F2937' }}>Days since assessment</th>
+                  <th className="font-semibold py-2.5 px-4 text-center" style={{ color: '#1F2937' }}>Trend</th>
+                  <th className="font-semibold font-bold py-2.5 px-4 text-center" style={{ color: '#1F2937' }}>Priority score</th>
+                  <th className="font-semibold py-2.5 px-4" style={{ color: '#1F2937' }}>Reasons</th>
                 </tr>
               </thead>
               <tbody>
@@ -379,44 +390,51 @@ export function OverviewDashboard() {
                   <tr
                     key={r.enrollment_id}
                     className="tr-hover-bg transition-colors cursor-pointer"
-                    style={{ borderBottom: '1px solid var(--table-border)' }}
-                    onClick={() => navigate(`/app/${subject}/enrollment/${r.enrollment_id}`)}
+                    style={{ borderBottom: '1px solid #E2E8F0' }}
+                    onClick={() => {
+                      if (r.student_uuid) {
+                        navigate(`/app/${subject}/student/${r.student_uuid}`)
+                      } else {
+                        navigate(`/app/${subject}/enrollment/${r.enrollment_id}`)
+                      }
+                    }}
                   >
-                    <td className="py-3 px-4">
-                      <span className="font-semibold text-[var(--color-primary-accent)]" style={{ fontSize: 'var(--table-name-size)' }}>
+                    <td className="py-2 px-4">
+                      <span className="font-semibold" style={{ fontSize: 'var(--table-name-size)', color: '#1E3A5F' }}>
                         {r.display_name}
                       </span>
-                      {r.grade_level && <span className="ml-2 opacity-60 text-[var(--caption-size)]">{r.grade_level}</span>}
+                      {r.grade_level && <span className="ml-2 text-[var(--caption-size)]" style={{ color: '#94A3B8' }}>{r.grade_level}</span>}
                     </td>
-                    <td className="py-3 px-4 text-center">
+                    <td className="py-2 px-4 text-center">
                       <span
-                        className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                          r.support_status === 'Needs Support' ? 'bg-amber-100 text-amber-800' :
-                          r.support_status === 'Monitor' ? 'bg-sky-100 text-sky-800' :
-                          r.support_status === 'On Track' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'
-                        }`}
+                        className="inline-block px-2 py-0.5 rounded text-xs font-medium"
+                        style={
+                          r.support_status === 'Needs Support' ? { backgroundColor: '#FEF3C7', color: '#92400E' } :
+                          r.support_status === 'Monitor' ? { backgroundColor: '#E0F2FE', color: '#0369A1' } :
+                          r.support_status === 'On Track' ? { backgroundColor: '#D1FAE5', color: '#065F46' } : { backgroundColor: '#F1F5F9', color: '#475569' }
+                        }
                       >
                         {r.support_status ?? 'Unknown'}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-center">
+                    <td className="py-2 px-4 text-center">
                       <RiskBadge tier={tierToDisplayTier(r.tier)} showNotAssessed />
                     </td>
-                    <td className="py-3 px-4 text-center">{r.has_active_intervention ? 'Yes' : 'No'}</td>
-                    <td className="py-3 px-4 text-center">{r.days_since_assessment ?? '—'}</td>
-                    <td className="py-3 px-4 text-center"><TrendChip trend={r.trend ?? undefined} /></td>
-                    <td className="py-3 px-4 text-center font-medium">{r.priority_score ?? '—'}</td>
-                    <td className="py-3 px-4">
+                    <td className="py-2 px-4 text-center">{r.has_active_intervention ? 'Yes' : 'No'}</td>
+                    <td className="py-2 px-4 text-center">{r.days_since_assessment ?? '—'}</td>
+                    <td className="py-2 px-4 text-center"><TrendChip trend={r.trend ?? undefined} /></td>
+                    <td className="py-2 px-4 text-center font-bold" style={{ color: '#1F2937' }}>{r.priority_score != null ? Number(r.priority_score).toFixed(1) : '—'}</td>
+                    <td className="py-2 px-4">
                       {r.reason_chips && r.reason_chips.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
                           {r.reason_chips.map((chip) => (
-                            <span key={chip} className="inline-block px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-200">
+                            <span key={chip} className="inline-block px-2 py-0.5 rounded text-xs" style={{ backgroundColor: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
                               {chip}
                             </span>
                           ))}
                         </div>
                       ) : (
-                        <span className="text-[var(--caption-size)] opacity-70">{r.reasons ?? '—'}</span>
+                        <span className="text-[var(--caption-size)]" style={{ color: '#94A3B8' }}>{r.reasons ?? '—'}</span>
                       )}
                     </td>
                   </tr>
@@ -433,14 +451,20 @@ export function OverviewDashboard() {
           <h2 className="font-semibold text-[var(--color-text)] mb-4" style={{ fontSize: 'var(--section-title-size)', fontFamily: 'var(--font-family)' }}>
             Growth Metrics
           </h2>
-          <div className="flex flex-wrap items-center gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
             <div>
-              <p className="text-[var(--label-size)] opacity-70">Median growth</p>
-              <p className="text-xl font-bold">{growth?.median_growth ?? '—'}</p>
+              <p className="text-[var(--label-size)] opacity-70 mb-1">Median growth</p>
+              <p className="text-3xl font-extrabold text-[var(--color-text)]">
+                {growth?.median_growth != null ? Number(growth.median_growth).toFixed(1) : '—'}
+              </p>
+              <p className="text-[var(--caption-size)] opacity-60 mt-1">score points</p>
             </div>
             <div>
-              <p className="text-[var(--label-size)] opacity-70">% Improving</p>
-              <p className="text-xl font-bold text-green-700">{growth?.pct_improving ?? 0}%</p>
+              <p className="text-[var(--label-size)] opacity-70 mb-1">% Improving</p>
+              <p className="text-3xl font-extrabold text-green-700">
+                {growth?.pct_improving != null ? `${Number(growth.pct_improving).toFixed(1)}%` : '0%'}
+              </p>
+              <p className="text-[var(--caption-size)] opacity-60 mt-1">since last period</p>
             </div>
             <button
               type="button"
@@ -448,12 +472,50 @@ export function OverviewDashboard() {
               className="text-left"
               title="Filter priority table to declining trend"
             >
-              <p className="text-[var(--label-size)] opacity-70">% Declining</p>
-              <p className={`text-xl font-bold text-amber-700 ${kpiFilter === 'declining' ? 'ring-2 ring-[var(--color-primary)] rounded px-1' : ''}`}>{growth?.pct_declining ?? 0}%</p>
+              <p className="text-[var(--label-size)] opacity-70 mb-1">% Declining</p>
+              <p
+                className={`text-3xl font-extrabold text-amber-700 ${
+                  kpiFilter === 'declining' ? 'ring-2 ring-[var(--color-primary)] rounded px-1' : ''
+                }`}
+              >
+                {growth?.pct_declining != null ? `${Number(growth.pct_declining).toFixed(1)}%` : '0%'}
+              </p>
+              <p className="text-[var(--caption-size)] opacity-60 mt-1">click to filter table</p>
             </button>
             <div>
-              <p className="text-[var(--label-size)] opacity-70">Students w/ growth data</p>
-              <p className="text-xl font-bold">{growth?.students_with_growth_data ?? 0}</p>
+              <p className="text-[var(--label-size)] opacity-70 mb-1">Students w/ growth data</p>
+              <p className="text-3xl font-extrabold text-[var(--color-text)]">
+                {growth?.students_with_growth_data ?? 0}
+              </p>
+              <p className="text-[var(--caption-size)] opacity-60 mt-1">in current filters</p>
+            </div>
+            <div>
+              <p className="text-[var(--label-size)] opacity-70 mb-1">% Stable</p>
+              <p className="text-3xl font-extrabold text-sky-700">
+                {growth?.pct_stable != null ? `${Number(growth.pct_stable).toFixed(1)}%` : '0%'}
+              </p>
+              <p className="text-[var(--caption-size)] opacity-60 mt-1">little change between last two</p>
+            </div>
+            <div>
+              <p className="text-[var(--label-size)] opacity-70 mb-1">Avg growth</p>
+              <p className="text-3xl font-extrabold text-[var(--color-text)]">
+                {growth?.avg_growth != null ? Number(growth.avg_growth).toFixed(1) : '—'}
+              </p>
+              <p className="text-[var(--caption-size)] opacity-60 mt-1">mean change in score</p>
+            </div>
+            <div>
+              <p className="text-[var(--label-size)] opacity-70 mb-1">Best gain</p>
+              <p className="text-3xl font-extrabold text-emerald-700">
+                {growth?.max_growth != null ? `+${Number(growth.max_growth).toFixed(1)}` : '—'}
+              </p>
+              <p className="text-[var(--caption-size)] opacity-60 mt-1">top positive change</p>
+            </div>
+            <div>
+              <p className="text-[var(--label-size)] opacity-70 mb-1">Largest drop</p>
+              <p className="text-3xl font-extrabold text-red-700">
+                {growth?.min_growth != null ? Number(growth.min_growth).toFixed(1) : '—'}
+              </p>
+              <p className="text-[var(--caption-size)] opacity-60 mt-1">most negative change</p>
             </div>
           </div>
         </div>
@@ -465,14 +527,24 @@ export function OverviewDashboard() {
           {histogramData.length > 0 ? (
             <div className="h-[220px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={histogramData} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
-                  <XAxis dataKey="bin_min" type="number" tick={{ fontSize: 12 }} tickFormatter={(v) => `${v}`} />
-                  <YAxis tick={{ fontSize: 12 }} />
+                <BarChart data={histogramData} margin={{ top: 16, right: 16, left: 36, bottom: 36 }}>
+                  <XAxis
+                    dataKey="bin_min"
+                    type="number"
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(v) => `${v}`}
+                    label={{ value: 'Latest assessment score (0–100)', position: 'insideBottom', offset: -8, style: { textAnchor: 'middle', fontSize: 12 } }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 12 }}
+                    domain={[0, distributionYMax]}
+                    label={{ value: 'Number of students', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fontSize: 12 } }}
+                  />
                   <Tooltip
                     formatter={(value: number, _name: string, props: { payload?: { count?: number; pct?: number } }) => {
                       const count = props.payload?.count ?? value
                       const pct = props.payload?.pct ?? 0
-                      return [`${count} (${pct}%)`, 'Count']
+                      return [`${count} (${Number(pct).toFixed(1)}%)`, 'Count']
                     }}
                     labelFormatter={(label, payload) => {
                       const p = payload?.[0]?.payload as { bin_min?: number; bin_max?: number } | undefined
@@ -499,17 +571,6 @@ export function OverviewDashboard() {
         </div>
       </div>
 
-      {/* Recent changes (tier movement) — tier_history table populated by nightly job or on assessment entry */}
-      <div className="rounded-[var(--card-radius)] border p-4 mb-6 bg-[var(--color-bg-surface-muted)]" style={{ borderColor: 'var(--color-border)' }}>
-        <h2 className="font-semibold text-[var(--color-text)] mb-2" style={{ fontSize: 'var(--section-title-size)', fontFamily: 'var(--font-family)' }}>
-          Tier movement
-        </h2>
-        <p className="text-[var(--caption-size)] opacity-70">
-          Moved down (better): <strong>{kpis?.tier_moved_down_count ?? 0}</strong> · Moved up (worse): <strong>{kpis?.tier_moved_up_count ?? 0}</strong>.
-          Once <code className="px-1 rounded bg-black/10">tier_history</code> is populated (on assessment entry or nightly job), these counts will show changes since last period.
-        </p>
-      </div>
-
       {distribution?.avg_by_grade && distribution.avg_by_grade.length > 0 && (
         <div className="rounded-[var(--card-radius)] border p-5" style={{ marginBottom: SECTION_GAP, boxShadow: 'var(--card-shadow)', backgroundColor: 'var(--color-bg-surface)', borderColor: 'var(--card-border)' }}>
           <h2 className="font-semibold text-[var(--color-text)] mb-4" style={{ fontSize: 'var(--section-title-size)', fontFamily: 'var(--font-family)' }}>
@@ -521,7 +582,7 @@ export function OverviewDashboard() {
                 <XAxis dataKey="grade_level" tick={{ fontSize: 14 }} />
                 <YAxis yAxisId="left" domain={[0, 105]} tick={{ fontSize: 14 }} label={{ value: 'Score (pts)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle' } }} />
                 <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 12 }} tickFormatter={(v) => `${v}%`} />
-                <Tooltip formatter={(value: number, name: string) => [name === 'Avg Score' ? value : `${value}%`, name]} />
+                <Tooltip formatter={(value: number, name: string) => [name === 'Avg Score' ? Number(value).toFixed(1) : `${Number(value).toFixed(1)}%`, name]} />
                 <ReferenceLine yAxisId="left" y={70} stroke="#22c55e" strokeWidth={1.5} strokeDasharray="4 4" />
                 <Bar yAxisId="left" dataKey="average_score" name="Avg Score" radius={[4, 4, 0, 0]} fill="var(--color-primary)" />
                 <Bar yAxisId="right" dataKey="pct_needs_support" name="% Needs Support" radius={[4, 4, 0, 0]} fill="#f59e0b" />

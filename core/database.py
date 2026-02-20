@@ -620,7 +620,20 @@ def get_enrollment_assessments(enrollment_id: str, school_year: str = None) -> p
 
 
 def get_enrollment_interventions(enrollment_id: str) -> pd.DataFrame:
-    """Get interventions for the student in this enrollment (via legacy_student_id)."""
+    """Get interventions for this enrollment (by enrollment_id first, then legacy student_id fallback)."""
+    conn = get_db_connection()
+    try:
+        df = pd.read_sql_query(
+            '''SELECT i.* FROM interventions i
+               WHERE i.enrollment_id = %s
+               ORDER BY i.start_date DESC NULLS LAST''',
+            conn, params=[enrollment_id],
+        )
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    if not df.empty:
+        return df
     en = get_enrollment(enrollment_id)
     if not en or en.get("legacy_student_id") is None:
         return pd.DataFrame()

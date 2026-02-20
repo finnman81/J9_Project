@@ -10,13 +10,63 @@ from core.database import (
     get_v_priority_students,
     get_v_growth_last_two,
     get_benchmark_thresholds,
+    get_db_connection,
 )
+from core.erb_scoring import ERB_SUBTESTS, ERB_SUBTEST_LABELS, parse_erb_score_value, get_erb_independent_norm
 from api.serializers import dataframe_to_records
 
 router = APIRouter()
 
-# Grade order for charts and filters: Kindergarten → First → Second → Third → Fourth
-GRADE_ORDER = ["Kindergarten", "First", "Second", "Third", "Fourth"]
+# Grade order for charts and filters: Kindergarten → Eighth (school flow 5, 6, 7, 8)
+GRADE_ORDER = ["Kindergarten", "First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth"]
+
+
+def _dedupe_support_by_student(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse multiple enrollments per student_uuid down to the most recent row.
+
+    Uses school_year (when present) to pick the latest enrollment for each student.
+    """
+    if df is None or df.empty or "student_uuid" not in df.columns:
+        return df
+    df = df.copy()
+    if "school_year" in df.columns:
+        df["_year_sort"] = df["school_year"].astype(str)
+        df = df.sort_values(["student_uuid", "_year_sort"], ascending=[True, False])
+    else:
+        df = df.sort_values(["student_uuid"])
+    df = df.drop_duplicates(subset=["student_uuid"], keep="first")
+    return df.drop(columns=["_year_sort"], errors="ignore")
+
+
+def _dedupe_priority_by_student(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse multiple enrollments per student for priority table to one row per student."""
+    if df is None or df.empty:
+        return df
+    # Attach student_uuid via student_enrollments if not present
+    if "student_uuid" not in df.columns:
+        conn = get_db_connection()
+        try:
+            map_df = pd.read_sql_query(
+                "SELECT enrollment_id, student_uuid FROM public.student_enrollments",
+                conn,
+            )
+        except Exception:
+            conn.close()
+            return df
+        conn.close()
+        df = df.merge(map_df, on="enrollment_id", how="left")
+    if "student_uuid" not in df.columns:
+        return df
+    df = df.copy()
+    # Prefer higher priority_score, then more days_since_assessment
+    df["_prio_sort"] = df.get("priority_score", 0)
+    df["_days_sort"] = df.get("days_since_assessment", 0)
+    df = df.sort_values(
+        ["student_uuid", "_prio_sort", "_days_sort"],
+        ascending=[True, False, False],
+    )
+    df = df.drop_duplicates(subset=["student_uuid"], keep="first")
+    return df.drop(columns=["_prio_sort", "_days_sort"], errors="ignore")
 
 
 def _kpis_from_support_status(
@@ -47,6 +97,8 @@ def _kpis_from_support_status(
     }
     if df is None or df.empty:
         return empty
+    # Deduplicate to one row per student (latest enrollment per student_uuid)
+    df = _dedupe_support_by_student(df)
     total = len(df)
     assessed = df["latest_score"].notna().sum()
     # Support status: On Track / Monitor / Needs Support (tier: Core / Strategic / Intensive)
@@ -60,7 +112,7 @@ def _kpis_from_support_status(
     overdue = (df["days_since_assessment"] > 90).sum() if "days_since_assessment" in df.columns else 0
     days = df["days_since_assessment"].dropna()
     days = days[days >= 0]
-    median_days = float(days.median()) if len(days) else None
+    median_days = round(float(days.median()), 1) if len(days) else None
 
     # Assessed this window: latest_period + school_year match
     assessed_window = 0
@@ -158,6 +210,7 @@ def get_priority_students(
             grade_level=grade_level,
             class_name=class_name,
         )
+        df = _dedupe_priority_by_student(df)
         if df is None or df.empty:
             return {
                 "rows": [],
@@ -206,7 +259,10 @@ def get_growth_metrics(
     grade_level: str | None = None,
     class_name: str | None = None,
 ):
-    """Return growth KPIs (median_growth, pct_improving, pct_declining, n) from last-two view."""
+    """Return growth KPIs from last-two view.
+
+    Includes median/average growth, % Improving/Declining/Stable, and best/worst changes.
+    """
     try:
         df = get_v_growth_last_two(
             teacher_name=teacher_name,
@@ -218,27 +274,44 @@ def get_growth_metrics(
         if df is None or df.empty or "growth" not in df.columns:
             return {
                 "median_growth": None,
+                "avg_growth": None,
                 "pct_improving": 0.0,
                 "pct_declining": 0.0,
+                "pct_stable": 0.0,
                 "students_with_growth_data": 0,
+                "max_growth": None,
+                "min_growth": None,
             }
         growth = df["growth"].dropna()
         n = len(growth)
         if n == 0:
             return {
                 "median_growth": None,
+                "avg_growth": None,
                 "pct_improving": 0.0,
                 "pct_declining": 0.0,
+                "pct_stable": 0.0,
                 "students_with_growth_data": 0,
+                "max_growth": None,
+                "min_growth": None,
             }
         trend = df["trend"] if "trend" in df.columns else pd.Series(dtype=object)
         improving = (trend == "Improving").sum()
         declining = (trend == "Declining").sum()
+        stable = (trend == "Stable").sum()
+        median_growth = round(float(growth.median()), 1)
+        avg_growth = round(float(growth.mean()), 1)
+        max_growth = round(float(growth.max()), 1)
+        min_growth = round(float(growth.min()), 1)
         return {
-            "median_growth": round(float(growth.median()), 1),
+            "median_growth": median_growth,
+            "avg_growth": avg_growth,
             "pct_improving": round(100.0 * improving / n, 1),
             "pct_declining": round(100.0 * declining / n, 1),
+            "pct_stable": round(100.0 * stable / n, 1),
             "students_with_growth_data": n,
+            "max_growth": max_growth,
+            "min_growth": min_growth,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -261,6 +334,8 @@ def get_distribution(
             grade_level=grade_level,
             class_name=class_name,
         )
+        # Deduplicate to one row per student for distribution / avg-by-grade
+        df = _dedupe_support_by_student(df)
         scores = df["latest_score"].dropna() if df is not None and not df.empty else pd.Series(dtype=float)
         bins = []
         total_scores = len(scores)
@@ -284,6 +359,7 @@ def get_distribution(
                 needs_count=("_needs", "sum"),
             ).reset_index()
             grp["pct_needs_support"] = (100.0 * grp["needs_count"] / grp["total"].replace(0, 1)).round(1)
+            grp["average_score"] = grp["average_score"].round(1)
             grp = grp.drop(columns=["total", "needs_count"], errors="ignore")
             order = {g: i for i, g in enumerate(GRADE_ORDER)}
             grp["_order"] = grp["grade_level"].map(lambda x: order.get(x, 99))
@@ -296,8 +372,8 @@ def get_distribution(
         support_threshold = None
         benchmark_threshold = None
         if thresholds_df is not None and not thresholds_df.empty:
-            support_threshold = float(thresholds_df["support_threshold"].median()) if "support_threshold" in thresholds_df.columns else None
-            benchmark_threshold = float(thresholds_df["benchmark_threshold"].median()) if "benchmark_threshold" in thresholds_df.columns else None
+            support_threshold = round(float(thresholds_df["support_threshold"].median()), 1) if "support_threshold" in thresholds_df.columns else None
+            benchmark_threshold = round(float(thresholds_df["benchmark_threshold"].median()), 1) if "benchmark_threshold" in thresholds_df.columns else None
         return {
             "bins": bins,
             "avg_by_grade": avg_by_grade,
@@ -306,3 +382,195 @@ def get_distribution(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/metrics/support-trend")
+def get_support_trend(
+    teacher_name: str | None = None,
+    school_year: str | None = None,
+    subject: str | None = None,
+    grade_level: str | None = None,
+    class_name: str | None = None,
+):
+    """
+    Multi-year support need trend: % of students in Intensive/Strategic tier by school_year.
+
+    Used by Analytics page's "Support need trends by year" chart.
+    """
+    try:
+        df = get_v_support_status(
+            teacher_name=teacher_name,
+            school_year=school_year,
+            subject_area=subject,
+            grade_level=grade_level,
+            class_name=class_name,
+        )
+        if df is None or df.empty or "school_year" not in df.columns:
+            return {"rows": []}
+        needs = df["tier"].isin(["Intensive", "Strategic"]) if "tier" in df.columns else pd.Series(False, index=df.index)
+        df_grp = df.assign(_needs=needs)
+        grp = df_grp.groupby("school_year").agg(
+            total=("latest_score", "count"),
+            needs_count=("_needs", "sum"),
+        ).reset_index()
+        grp["pct_needs_support"] = (100.0 * grp["needs_count"] / grp["total"].replace(0, 1)).round(1)
+        grp = grp.sort_values("school_year")
+        rows = dataframe_to_records(grp.rename(columns={"needs_count": "needs_support"}))
+        return {"rows": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/metrics/assessment-averages")
+def get_assessment_averages(
+    subject: str | None = None,
+    school_year: str | None = None,
+    grade_level: str | None = None,
+):
+    """
+    Assessment-type averages across school (score_normalized).
+
+    Used by Analytics page's "Assessment type averages across school" chart.
+    Optional grade_level filters to assessments for that grade (via student_enrollments).
+    """
+    conn = get_db_connection()
+    try:
+        params: list = []
+        if grade_level:
+            query = """
+                SELECT a.subject_area,
+                       a.assessment_type,
+                       AVG(a.score_normalized) AS average_score,
+                       COUNT(*) AS count
+                FROM assessments a
+                JOIN student_enrollments e ON e.enrollment_id = a.enrollment_id
+                WHERE a.score_normalized IS NOT NULL
+                  AND e.grade_level = %s
+            """
+            params.append(grade_level)
+        else:
+            query = """
+                SELECT subject_area,
+                       assessment_type,
+                       AVG(score_normalized) AS average_score,
+                       COUNT(*) AS count
+                FROM assessments
+                WHERE score_normalized IS NOT NULL
+            """
+        if subject:
+            query += " AND a.subject_area = %s" if grade_level else " AND subject_area = %s"
+            params.append(subject)
+        if school_year:
+            query += " AND a.school_year = %s" if grade_level else " AND school_year = %s"
+            params.append(school_year)
+        query += " GROUP BY a.subject_area, a.assessment_type ORDER BY a.subject_area, a.assessment_type" if grade_level else " GROUP BY subject_area, assessment_type ORDER BY subject_area, assessment_type"
+        df = pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+    conn.close()
+    if df is None or df.empty:
+        return {"rows": []}
+    df["average_score"] = df["average_score"].round(1)
+    rows = dataframe_to_records(df)
+    return {"rows": rows}
+
+
+@router.get("/metrics/erb-comparison")
+def get_erb_comparison(
+    subject: str | None = None,
+    school_year: str | None = None,
+):
+    """
+    ERB vs Independent Norm comparison.
+
+    Aggregates ERB stanine/percentile by grade and subtest, and compares to Independent Norm
+    (via core.erb_scoring.get_erb_independent_norm). Used by the Analytics page.
+    """
+    conn = get_db_connection()
+    try:
+        # Restrict ERB subtests by subject if provided (Math: ERB_Mathematics; Reading: others).
+        if subject and str(subject).strip().lower() == "math":
+            subtests = ["ERB_Mathematics"]
+        elif subject and str(subject).strip().lower() == "reading":
+            subtests = [s for s in ERB_SUBTESTS if s != "ERB_Mathematics"]
+        else:
+            subtests = list(ERB_SUBTESTS)
+
+        params: list = [subtests]
+        query = """
+            SELECT a.student_id,
+                   a.school_year,
+                   a.assessment_type,
+                   a.score_value,
+                   s.grade_level
+            FROM assessments a
+            JOIN students s ON a.student_id = s.student_id AND a.school_year = s.school_year
+            WHERE a.assessment_type = ANY(%s)
+        """
+        if subject:
+            query += " AND a.subject_area = %s"
+            params.append(subject)
+        if school_year:
+            query += " AND a.school_year = %s"
+            params.append(school_year)
+        df = pd.read_sql_query(query, conn, params=params)
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
+    conn.close()
+
+    if df is None or df.empty:
+        return {"rows": []}
+
+    # Parse ERB scores into stanine/percentile
+    rows = []
+    for _, row in df.iterrows():
+        parsed = parse_erb_score_value(row.get("score_value", ""))
+        stanine = parsed.get("stanine")
+        if stanine is None:
+            continue
+        pct = parsed.get("percentile") or 50
+        rows.append(
+            {
+                "grade_level": row["grade_level"],
+                "subtest": row["assessment_type"],
+                "stanine": stanine,
+                "percentile": pct,
+            }
+        )
+    if not rows:
+        return {"rows": []}
+
+    erb_agg = pd.DataFrame(rows)
+    our_avg = (
+        erb_agg.groupby(["grade_level", "subtest"])
+        .agg(our_stanine=("stanine", "mean"), our_percentile=("percentile", "mean"))
+        .reset_index()
+    )
+
+    norm_rows = []
+    for _, r in our_avg.iterrows():
+        grade = r["grade_level"]
+        subtest = r["subtest"]
+        norm = get_erb_independent_norm(grade, subtest)
+        our_stanine = float(r["our_stanine"])
+        our_pct = float(r["our_percentile"])
+        norm_rows.append(
+            {
+                "grade_level": grade,
+                "subtest": subtest,
+                "subtest_label": ERB_SUBTEST_LABELS.get(subtest, subtest),
+                "our_avg_stanine": round(our_stanine, 1),
+                "ind_avg_stanine": norm["avg_stanine"],
+                "diff_stanine": round(our_stanine - norm["avg_stanine"], 1),
+                "our_avg_percentile": round(our_pct, 1),
+                "ind_avg_percentile": norm["avg_percentile"],
+                "diff_percentile": round(our_pct - norm["avg_percentile"], 1),
+            }
+        )
+
+    if not norm_rows:
+        return {"rows": []}
+
+    return {"rows": norm_rows}

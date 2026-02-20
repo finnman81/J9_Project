@@ -1,74 +1,115 @@
-# Literacy Assessment & Intervention Tracking System
+# School Assessment System
 
-A Streamlit-based web application for tracking student literacy assessments, calculating overall literacy scores, identifying intervention needs, and generating insights.
+A web application for tracking student reading and math assessments, calculating scores and risk levels, identifying intervention needs, and generating insights. Built with **React (Vite)** frontend and **FastAPI** backend, with PostgreSQL/Supabase database. Also includes a legacy Streamlit app.
 
 ## Features
 
-- **Overview Dashboard**: KPIs, interactive graphs, and sortable student table with filters
-- **Student Detail Page**: Deep dive into individual student progress with visualizations
-- **Grade Entry Page**: Flexible data entry supporting both single-student and bulk entry modes
-- **Intervention Tracking**: Track interventions and their effectiveness
-- **Automated Scoring**: Calculates overall literacy scores and risk levels automatically
+The app is organized by **subject** (Reading and Math), with the same pages available for each:
+
+- **Overview Dashboard**: Schoolwide KPIs (assessed count, overdue, tier movement), score distribution histogram, average score by grade chart, and sortable/filterable student table showing support status, tier, trend, and priority scores
+- **Student Detail**: Individual student view with summary KPIs (latest score, tier/risk, trend, last assessed, intervention status, goal status), score-over-time chart, and tables for assessments, interventions, notes, and goals (with enrollment filtering)
+- **Grade Entry**: Form-based entry for single assessments or bulk upload via CSV/Excel
+- **Analytics**: Deeper analytics including average score by grade (with units and grade order); additional analytics (norm comparison, multi-year trends, assessment-type breakdowns) are placeholders for future backend endpoints
+- **Intervention Tracking**: Track interventions by subject with start dates, status, and notes
+- **Automated Scoring**: Calculates overall scores, risk levels, and tier assignments (Core/Strategic/Intensive) automatically from assessment data
 
 ## Installation
 
-1. Install dependencies:
+See **Quick Start** section above for full setup instructions. Summary:
+
+1. Install Python dependencies: `pip install -r requirements.txt`
+2. Install frontend dependencies: `cd web && npm install`
+3. Configure database URL in `.env`
+4. Initialize database schema (if needed): `python -c "from core.database import init_database; init_database()"`
+
+For migrating existing data, see `scripts/migrate_data.py` and other scripts in `scripts/`.
+
+## Quick Start (React + FastAPI)
+
+### Prerequisites
+
+- **Python 3.8+** with `pip`
+- **Node.js 16+** with `npm`
+- **PostgreSQL database** (Supabase or local) with connection URL
+
+### Setup
+
+1. **Install Python dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Install frontend dependencies:**
+   ```bash
+   cd web
+   npm install
+   cd ..
+   ```
+
+3. **Configure database connection:**
+   - Copy `.env.example` to `.env` in the project root
+   - Edit `.env` and set your `DATABASE_URL`:
+     ```
+     DATABASE_URL=postgresql://user:password@host:port/database
+     ```
+   - Or set `DATABASE_URL` as an environment variable in your shell
+
+4. **Initialize database schema** (if needed):
+   ```bash
+   python -c "from core.database import init_database; init_database()"
+   ```
+
+### Launch the Application
+
+**You need two terminals running simultaneously:**
+
+**Terminal 1 - Start the API server:**
 ```bash
-pip install -r requirements.txt
+uvicorn api.main:app --reload --port 8000
 ```
+The API will be available at `http://localhost:8000` (and `/docs` for API documentation).
 
-2. Initialize the database:
+**Terminal 2 - Start the frontend:**
 ```bash
-python -c "from core.database import init_database; init_database()"
+cd web
+npm run dev
 ```
+The app will open in your browser at `http://localhost:5173`. The frontend automatically proxies `/api` requests to the backend on port 8000.
 
-3. Migrate existing data (optional):
-```bash
-python scripts/migrate_data.py
-```
+**Note:** On Windows PowerShell, use `;` instead of `&&` if combining commands (e.g., `cd web; npm run dev`).
 
-## Running the Application
+### Optional Frontend Configuration
 
-### Option 1: Streamlit (legacy)
+Copy `web/.env.example` to `web/.env` and customize:
+- `VITE_API_URL` - if the API is not on `http://localhost:8000`
+- `VITE_THEME` - theme name (default: `peck`)
+
+---
+
+## Legacy: Streamlit App
+
+The original Streamlit app is still available:
 
 ```bash
 streamlit run app.py
 ```
 
-The application will open in your browser at `http://localhost:8501`
-
-### Option 2: New Web App (React + FastAPI)
-
-From the **ui-project** branch, you can run the production-style web app:
-
-1. **Set database URL** (required for the API): copy `.env.example` to `.env` in the project root and set your `DATABASE_URL`:
-   ```bash
-   copy .env.example .env
-   ```
-   Then edit `.env` and set `DATABASE_URL=postgresql://...` (your Supabase or Postgres URL). The API loads `.env` automatically via python-dotenv. Alternatively set the `DATABASE_URL` environment variable in your shell. (Streamlit can still use `.streamlit/secrets.toml`.)
-
-2. **Start the API** (from project root):
-   ```bash
-   uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
-   ```
-
-3. **Start the frontend** (in another terminal):
-   ```bash
-   cd web
-   npm install
-   npm run dev
-   ```
-   On PowerShell use `;` instead of `&&` if you combine commands (e.g. `cd web; npm run dev`).
-   The app will be at `http://localhost:5173`. It proxies `/api` and `/health` to the API.
-
-4. **Optional**: Copy `web/.env.example` to `web/.env` and set `VITE_API_URL` if the API is not on port 8000, or `VITE_THEME` to switch themes (default is `peck`).
+Opens at `http://localhost:8501`. Uses `.streamlit/secrets.toml` for database configuration.
 
 ## Database Schema
 
-- **students**: Student information (name, grade, class, teacher)
-- **assessments**: Assessment scores and data
-- **interventions**: Intervention tracking
-- **literacy_scores**: Calculated literacy scores and risk levels
+The app uses PostgreSQL (Supabase) with enrollment-based identity:
+
+- **students_core**: Student UUIDs and display names
+- **student_enrollments**: One row per student per grade/year/class (enrollment_id)
+- **assessments**: Assessment scores linked to enrollments and subjects (Reading/Math)
+- **interventions**: Intervention tracking linked to enrollments
+- **student_goals**: Goals linked to enrollments
+- **teacher_notes**: Notes linked to enrollments
+- **v_support_status**: View computing tier (Core/Strategic/Intensive) from benchmark thresholds
+- **v_growth_last_two**: View computing trend (Improving/Stable/Declining) from last two assessments
+
+See `schema/` directory for full schema definitions and migrations.
 
 ## Usage
 
@@ -97,7 +138,7 @@ See **[DEPLOY.md](docs/DEPLOY.md)** for step-by-step instructions (including cre
 
 ## Notes
 
-- SQLite database is stored in `database/literacy_assessments.db`
-- Literacy scores are automatically recalculated when new assessments are added
-- Original Excel data can be imported via `migrate_data.py`
-- On Streamlit Cloud, the database is ephemeral (resets on app restart) unless you add a persistent database
+- **Database**: Uses PostgreSQL/Supabase (not SQLite). Connection string configured via `DATABASE_URL` in `.env`
+- **Scores and tiers**: Automatically calculated from assessments via SQL views (`v_support_status`, `v_growth_last_two`)
+- **Sample data**: Run `scripts/generate_sample_tier_trend_interventions_goals_notes.py` to populate benchmark thresholds, trends, interventions, goals, and notes for all students
+- **Data migration**: Original Excel/SQLite data can be imported via `scripts/migrate_data.py` and related migration scripts

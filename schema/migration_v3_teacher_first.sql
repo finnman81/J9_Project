@@ -209,7 +209,9 @@ SELECT
   COALESCE(ai.has_active_intervention, FALSE) AS has_active_intervention
 FROM public.student_enrollments e
 JOIN public.students_core s ON s.student_uuid = e.student_uuid
-LEFT JOIN latest l ON l.enrollment_id = e.enrollment_id AND l.school_year = e.school_year
+-- Join on enrollment only so both Reading and Math rows appear when they exist in latest
+-- (avoids missing Math when assessment school_year is NULL or differs from enrollment)
+LEFT JOIN latest l ON l.enrollment_id = e.enrollment_id
 LEFT JOIN active_intervention ai ON ai.enrollment_id = e.enrollment_id;
 
 -- 2.2 v_support_status: roster + tier from benchmark_thresholds
@@ -314,6 +316,7 @@ DROP VIEW IF EXISTS public.v_priority_students;
 CREATE VIEW public.v_priority_students AS
 SELECT
   ss.enrollment_id,
+  ss.student_uuid,
   ss.display_name,
   ss.teacher_name,
   ss.school_year,

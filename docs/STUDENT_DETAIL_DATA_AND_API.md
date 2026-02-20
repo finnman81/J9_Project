@@ -14,8 +14,8 @@ The Student Detail page shows a single student’s assessments, interventions, n
 
 | URL pattern | Mode | Description |
 |-------------|------|-------------|
-| `/app/:subject/student/:studentUuid` | UUID | Student detail by `students_core.student_uuid` (e.g. Andrea). Subject is `math` or `reading`. |
-| `/app/:subject/student` | Legacy | Student picker by legacy `student_id`; different API calls. |
+| `/app/:subject/student/:studentUuid` | UUID | Student detail by `students_core.student_uuid`. Data from `GET /api/student-detail/{uuid}?subject=...`. |
+| `/app/:subject/student` | UUID | Same flow: enrollment-based student picker; selecting a student navigates to `.../student/:uuid` and loads via student-detail API. |
 | `/app/:subject/enrollment/:enrollmentId` | Enrollment | Redirects to UUID mode using the enrollment’s `student_uuid`. |
 
 For the main flow below, **subject** = `math` or `reading`, **studentUuid** = UUID from the route.
@@ -183,9 +183,21 @@ The top summary cards use a computed **displayHeader** so that KPIs are never bl
 | API client | `web/src/api/client.ts` | `getStudentDetailByUuid`, `request`, types for response. |
 | Views | `schema/migration_v3_teacher_first.sql` | `v_teacher_roster`, `v_support_status`, `v_growth_last_two`. |
 
+See **§7 Troubleshooting** for the past issue where tier/trend/notes/goals did not show because the page used legacy mode when the URL had no `studentUuid`.
+
 ---
 
-## 7. Summary
+## 7. Troubleshooting: Tier / Trend / Notes / Goals not showing
+
+**Issue (fixed):** If users navigated to Student Detail via the sidebar (e.g. Math → Student Detail), the URL was `/app/math/student` with **no** `studentUuid` in the path. The frontend treated that as **legacy mode** (`isUuidMode = Boolean(studentUuidParam)` was false), so it used the old flow: `getStudents()` and, after picking a student, `getStudent(id)`, `getStudentMathScore(id)`, etc. That path **never** calls `GET /api/student-detail/{uuid}?subject=Math`, so **tier, trend, notes, and goals were never loaded** (and the legacy flow explicitly set notes/goals to empty).
+
+**Fix:** In `web/src/pages/StudentDetail.tsx`, the page now treats **any** URL path that contains `/student` as UUID mode (`isUuidMode = location.pathname.includes('/student')`). So both `/app/math/student` and `/app/math/student/:uuid` use the enrollment-based picker and, when a student is selected, load data via `getStudentDetailByUuid` (student-detail API). Tier, trend, notes, and goals then come from the API response.
+
+**If it resurfaces:** Check that the Student Detail page is not falling back to legacy mode (legacy uses `getStudents()` and numeric `student_id`; UUID mode uses `getEnrollments()` and `student_uuid`). Ensure `isUuidMode` is true whenever the user is on a route whose path includes `/student`.
+
+---
+
+## 8. Summary
 
 - **One request** loads all Student Detail data: `GET /api/student-detail/{uuid}?subject=Math` (optional `enrollment_ids`).
 - **Backend** uses subject to filter assessments and interventions, and builds the **header** from assessments first (so latest score and date are set), then support/growth for tier and trend.

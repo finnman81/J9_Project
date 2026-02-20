@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useParams } from 'react-router-dom'
+import { Outlet, NavLink, useLocation, useParams } from 'react-router-dom'
 import { useTheme } from '../themes/ThemeContext'
 
 const SUBJECTS = ['reading', 'math'] as const
@@ -12,8 +12,19 @@ const PAGES = [
 export function Layout() {
   const theme = useTheme()
   const { subject } = useParams<{ subject: string }>()
+  const location = useLocation()
   const currentSubject = (subject ?? 'reading').toLowerCase()
   const base = `/app/${currentSubject}`
+
+  // Preserve current page when switching Reading <-> Math.
+  // Example: /app/reading/student/<uuid> -> /app/math/student/<uuid>
+  const pathForSubject = (targetSubject: string) => {
+    const parts = location.pathname.split('/').filter(Boolean) // ["app","reading","student","..."]
+    if (parts.length < 2 || parts[0] !== 'app') return `/app/${targetSubject}/overview${location.search}`
+    const rest = parts.slice(2) // everything after subject
+    const suffix = rest.length > 0 ? rest.join('/') : 'overview'
+    return `/app/${targetSubject}/${suffix}${location.search}`
+  }
 
   return (
     <div className="flex min-h-screen">
@@ -36,7 +47,7 @@ export function Layout() {
             {SUBJECTS.map((s) => (
               <NavLink
                 key={s}
-                to={`/app/${s}/overview`}
+                to={pathForSubject(s)}
                 className={({ isActive }) =>
                   `flex-1 text-center py-2.5 rounded-md text-sm font-medium transition-colors ${
                     isActive ? 'bg-white/25 text-white' : 'text-white/80 hover:text-white hover:bg-white/10'

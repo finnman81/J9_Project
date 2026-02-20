@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
+import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   api,
   type Enrollment,
@@ -27,6 +27,7 @@ export function StudentDetail() {
   }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const idFromUrl = searchParams.get('id')
   const isMath = subject?.toLowerCase() === 'math'
   const subjectLabel = isMath ? 'Math' : 'Reading'
@@ -47,15 +48,21 @@ export function StudentDetail() {
   // --- Shared display state ---
   const [assessments, setAssessments] = useState<Assessment[]>([])
   const [interventions, setInterventions] = useState<Intervention[]>([])
-  const [scoresHistory, setScoresHistory] = useState<{ period: string; score: number }[]>([])
+  const [scoresHistory, setScoresHistory] = useState<{ period: string; score: number; assessment_type?: string }[]>([])
   const [header, setHeader] = useState<StudentDetailByUuidResponse['header'] | null>(null)
   const [notes, setNotes] = useState<Record<string, unknown>[]>([])
   const [goals, setGoals] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(false)
+  // Single-select assessment type filter for the Score Over Time chart
+  const [selectedAssessmentType, setSelectedAssessmentType] = useState<string>('')
 
-  const isUuidMode = Boolean(studentUuidParam)
-  const isEnrollmentMode = Boolean(enrollmentIdParam) && !isUuidMode
-  const isLegacyMode = !isUuidMode && !isEnrollmentMode
+  // Use UUID/enrollment flow whenever we're on the Student Detail route (with or without :studentUuid).
+  // This ensures tier, trend, notes, and goals load from GET /api/student-detail/{uuid}?subject=Math.
+  // Legacy mode (getStudents by id) only when explicitly on a route that has no /student in path (e.g. old bookmark).
+  const isOnStudentPage = location.pathname.includes('/student')
+  const isUuidMode = isOnStudentPage
+  const isEnrollmentMode = Boolean(enrollmentIdParam) && !studentUuidParam
+  const isLegacyMode = !isOnStudentPage
 
   // --- Derive unique students from all enrollments ---
   const uniqueStudents = (() => {
@@ -122,7 +129,18 @@ export function StudentDetail() {
       // Reset to "all" when student changes
       setSelectedEnrollmentIds([])
       setFilterApplied(false)
+      setSelectedAssessmentType('') // Reset assessment type filter
       fetchUuidDetail(studentUuidParam, [])
+    } else if (isUuidMode && !studentUuidParam) {
+      // No student selected (e.g. just landed on /app/math/student) — clear detail so we don't show stale data
+      setUuidDetail(null)
+      setHeader(null)
+      setAssessments([])
+      setInterventions([])
+      setScoresHistory([])
+      setNotes([])
+      setGoals([])
+      setSelectedAssessmentType('') // Reset assessment type filter
     }
   }, [isUuidMode, studentUuidParam, fetchUuidDetail])
 
@@ -175,6 +193,7 @@ export function StudentDetail() {
             score: Number(
               (isMath ? x.overall_math_score : (x.score_normalized ?? x.overall_literacy_score)) ?? 0,
             ),
+            assessment_type: x.assessment_type || undefined,
           }))
         setScoresHistory(byPeriod)
         setHeader(null)
@@ -297,10 +316,35 @@ export function StudentDetail() {
   const displayName = isUuidMode ? uuidDetail?.display_name : student?.student_name
   const hasData = isUuidMode ? Boolean(uuidDetail) : Boolean(student)
 
+  // Extract unique assessment types from scoresHistory
+  const availableAssessmentTypes = (() => {
+    const types = new Set<string>()
+    scoresHistory.forEach((item) => {
+      if (item.assessment_type) {
+        types.add(item.assessment_type)
+      }
+    })
+    return Array.from(types).sort()
+  })()
+
+  // Initialize selectedAssessmentType to first type when data loads (per student)
+  useEffect(() => {
+    if (availableAssessmentTypes.length > 0 && !selectedAssessmentType) {
+      setSelectedAssessmentType(availableAssessmentTypes[0]!)
+    }
+  }, [scoresHistory.length]) // Re-initialize when scoresHistory changes (new student/data loaded)
+
+  // Filter scoresHistory based on selected assessment type
+  const filteredScoresHistory = scoresHistory.filter((item) => {
+    if (!selectedAssessmentType) return true // Show all if nothing selected
+    if (!item.assessment_type) return false
+    return item.assessment_type === selectedAssessmentType
+  })
+
   const changeSinceLast = (() => {
-    if (scoresHistory.length < 2) return null
-    const a = scoresHistory[scoresHistory.length - 2].score
-    const b = scoresHistory[scoresHistory.length - 1].score
+    if (filteredScoresHistory.length < 2) return null
+    const a = filteredScoresHistory[filteredScoresHistory.length - 2].score
+    const b = filteredScoresHistory[filteredScoresHistory.length - 1].score
     const delta = b - a
     return { delta, from: a, to: b }
   })()
@@ -308,9 +352,36 @@ export function StudentDetail() {
   const benchmarkMin = 70
   const benchmarkMax = 100
 
+  // Calculate dynamic Y-axis domain based on filtered data
+  const yAxisDomain = (() => {
+    if (filteredScoresHistory.length === 0) return [0, 105]
+    
+    const scores = filteredScoresHistory.map((item) => item.score).filter((s) => !isNaN(s) && isFinite(s))
+    if (scores.length === 0) return [0, 105]
+    
+    const minScore = Math.min(...scores)
+    const maxScore = Math.max(...scores)
+    
+    // Ensure benchmark range (70-100) is visible
+    const dataMin = Math.min(minScore, benchmarkMin)
+    const dataMax = Math.max(maxScore, benchmarkMax)
+    
+    // Add padding: 10% below min, 10% above max, but cap at reasonable bounds
+    const padding = (dataMax - dataMin) * 0.1
+    const domainMin = Math.max(0, Math.floor(dataMin - padding))
+    const domainMax = Math.min(105, Math.ceil(dataMax + padding))
+    
+    // Ensure we have at least some range
+    if (domainMax - domainMin < 20) {
+      return [Math.max(0, domainMin - 10), Math.min(105, domainMax + 10)]
+    }
+    
+    return [domainMin, domainMax]
+  })()
+
   return (
     <div className="mx-auto" style={{ maxWidth: 'var(--content-max-width)' }}>
-      <h1 className="text-2xl font-semibold mb-4" style={{ fontFamily: 'var(--font-family)' }}>
+      <h1 className="text-3xl font-bold mb-4" style={{ fontFamily: 'var(--font-family)', color: '#1F2937' }}>
         {subjectLabel} Student Detail
       </h1>
 
@@ -354,9 +425,9 @@ export function StudentDetail() {
 
       {/* --- Enrollment filter (UUID mode) --- */}
       {isUuidMode && studentEnrollments.length > 0 && (
-        <div className="mb-6 p-4 rounded border bg-[var(--color-bg-surface)]" style={{ borderColor: 'var(--color-border)' }}>
+        <div className="mb-6 p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">Filter by Grade / Year</span>
+            <span className="text-sm font-medium" style={{ color: '#1F2937' }}>Filter by Grade / Year</span>
             <span className="flex gap-2">
               <button
                 type="button"
@@ -380,11 +451,12 @@ export function StudentDetail() {
               return (
                 <label
                   key={e.enrollment_id}
-                  className={`inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full border cursor-pointer transition-colors ${
+                  className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full border cursor-pointer transition-colors"
+                  style={
                     checked
-                      ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
-                      : 'bg-[var(--color-bg-surface)] border-[var(--color-border)] opacity-60 hover:opacity-100'
-                  }`}
+                      ? { backgroundColor: '#1E3A5F', color: '#FFFFFF', borderColor: '#1E3A5F' }
+                      : { backgroundColor: '#E5E7EB', color: '#1E3A5F', borderColor: '#D1D5DB' }
+                  }
                 >
                   <input
                     type="checkbox"
@@ -405,51 +477,65 @@ export function StudentDetail() {
       {!loading && hasData && (
         <>
           {/* Top strip KPIs — use displayHeader (from API or legacy fallback) */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-            <div className="p-4 rounded border bg-[var(--color-bg-surface)]" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" style={{ marginBottom: '2.5rem' }}>
+            <div className="p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', borderLeftWidth: '4px', borderLeftColor: '#1E3A5F', boxShadow: 'none' }}>
               <p className="text-sm opacity-80">Latest Score</p>
-              <p className="text-xl font-semibold">
+              <p className="text-5xl font-semibold" style={{ color: '#1F2937' }}>
                 {displayHeader?.latest_score != null
                   ? Number(displayHeader.latest_score).toFixed(1)
-                  : scoresHistory.length > 0
-                    ? scoresHistory[scoresHistory.length - 1].score.toFixed(1)
-                    : '—'}
+                  : filteredScoresHistory.length > 0
+                    ? filteredScoresHistory[filteredScoresHistory.length - 1].score.toFixed(1)
+                    : scoresHistory.length > 0
+                      ? scoresHistory[scoresHistory.length - 1].score.toFixed(1)
+                      : '—'}
               </p>
             </div>
-            <div className="p-4 rounded border bg-[var(--color-bg-surface)]" style={{ borderColor: 'var(--color-border)' }}>
+            <div className="p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
               <p className="text-sm opacity-80">Tier / Risk</p>
               <p className="pt-1">
                 <RiskBadge tier={displayHeader ? tierToDisplayTier(displayHeader.tier) : undefined} risk={undefined} />
               </p>
             </div>
-            <div className="p-4 rounded border bg-[var(--color-bg-surface)]" style={{ borderColor: 'var(--color-border)' }}>
+            <div className="p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
               <p className="text-sm opacity-80">Trend</p>
               <p className="pt-1">
                 <TrendChip trend={displayHeader?.trend ?? undefined} />
               </p>
             </div>
-            <div className="p-4 rounded border bg-[var(--color-bg-surface)]" style={{ borderColor: 'var(--color-border)' }}>
+            <div className="p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
               <p className="text-sm opacity-80">Last assessed</p>
-              <p className="text-lg font-medium">{displayHeader?.last_assessed_date ?? '—'}</p>
+              <p className="text-lg font-medium" style={{ color: '#1F2937' }}>{displayHeader?.last_assessed_date ?? '—'}</p>
               {displayHeader?.days_since_assessment != null && (
                 <p className="text-[var(--caption-size)] opacity-70">{displayHeader.days_since_assessment} days since</p>
               )}
             </div>
-            <div className="p-4 rounded border bg-[var(--color-bg-surface)]" style={{ borderColor: 'var(--color-border)' }}>
+            <div className="p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
               <p className="text-sm opacity-80">Intervention</p>
-              <p className="text-lg font-medium">{displayHeader?.has_active_intervention ? 'Active' : 'None'}</p>
+              <p className="text-lg font-medium" style={{ color: '#1F2937' }}>{displayHeader?.has_active_intervention ? 'Active' : 'None'}</p>
             </div>
-            <div className="p-4 rounded border bg-[var(--color-bg-surface)]" style={{ borderColor: 'var(--color-border)' }}>
+            <div className="p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
               <p className="text-sm opacity-80">Goal status</p>
-              <p className="text-lg font-medium">{displayHeader?.goal_status ?? '—'}</p>
+              <p className="text-lg font-medium" style={{ color: '#1F2937' }}>{displayHeader?.goal_status ?? '—'}</p>
             </div>
           </div>
 
           {/* Change since last callout */}
           {changeSinceLast != null && (
-            <div className="mb-6 p-4 rounded border bg-[var(--color-bg-surface-muted)]" style={{ borderColor: 'var(--color-border)' }}>
+            <div
+              className="mb-6 p-4 rounded-lg border"
+              style={{
+                backgroundColor: changeSinceLast.delta >= 0 ? '#F0F7F3' : '#FDF2F2',
+                border: '1px solid #E2E8F0',
+                borderLeftWidth: '4px',
+                borderLeftColor: changeSinceLast.delta >= 0 ? '#1E6B43' : '#9B1C1C',
+                boxShadow: 'none',
+              }}
+            >
               <span className="text-[var(--label-size)] font-medium opacity-80">Change since last: </span>
-              <span className={`font-bold ${changeSinceLast.delta >= 0 ? 'text-green-700' : 'text-amber-700'}`}>
+              <span
+                className="font-bold"
+                style={{ color: changeSinceLast.delta >= 0 ? '#166534' : '#991B1B' }}
+              >
                 {changeSinceLast.delta >= 0 ? '+' : ''}
                 {changeSinceLast.delta.toFixed(1)} pts
               </span>
@@ -461,17 +547,50 @@ export function StudentDetail() {
 
           {/* Score over time with benchmark band */}
           {scoresHistory.length > 0 && (
-            <div className="mb-8 rounded border p-4 bg-[var(--color-bg-surface)]" style={{ borderColor: 'var(--color-border)' }}>
-              <h2 className="text-lg font-medium mb-4" style={{ fontFamily: 'var(--font-family)' }}>Score Over Time</h2>
+            <div className="mb-8 rounded-lg border p-4" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-lg font-medium" style={{ fontFamily: 'var(--font-family)', color: '#1F2937' }}>Score Over Time</h2>
+                  <div className="flex items-center gap-2 text-xs opacity-70">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded" style={{ backgroundColor: '#A7D4B8' }}></div>
+                      <span>Benchmark range ({benchmarkMin}-{benchmarkMax})</span>
+                    </div>
+                  </div>
+                </div>
+                {availableAssessmentTypes.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs opacity-70">Assessment type:</span>
+                    <select
+                      className="border rounded-lg px-2 py-1 text-xs"
+                      style={{ backgroundColor: '#F7F9FB', borderColor: '#E2E8F0' }}
+                      value={selectedAssessmentType || (availableAssessmentTypes[0] ?? '')}
+                      onChange={(e) => setSelectedAssessmentType(e.target.value)}
+                    >
+                      {availableAssessmentTypes.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={scoresHistory} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                    <XAxis dataKey="period" tick={{ fontSize: 12 }} />
-                    <YAxis domain={[0, 105]} tick={{ fontSize: 12 }} />
-                    <Tooltip />
-                    <ReferenceArea y1={benchmarkMin} y2={benchmarkMax} fill="#22c55e" fillOpacity={0.15} />
-                    <Line type="monotone" dataKey="score" stroke="var(--color-primary)" strokeWidth={2} name="Score" dot={{ r: 4 }} />
+                  <LineChart data={filteredScoresHistory} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                    <XAxis dataKey="period" tick={{ fontSize: 12, fill: '#475569' }} />
+                    <YAxis domain={yAxisDomain} tick={{ fontSize: 12, fill: '#475569' }} />
+                    <Tooltip
+                      formatter={(value: number, _name: string, props: { payload?: { assessment_type?: string } }) => {
+                        const type = props.payload?.assessment_type
+                        const formatted = typeof value === 'number' ? Number(value).toFixed(1) : value
+                        return type ? [`${formatted} (${type})`, 'Score'] : [formatted, 'Score']
+                      }}
+                    />
+                    <ReferenceArea y1={benchmarkMin} y2={benchmarkMax} fill="#EAF4EF" fillOpacity={0.9} />
+                    <Line type="monotone" dataKey="score" stroke="#1E3A5F" strokeWidth={2.5} name="Score" dot={{ r: 4 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -480,8 +599,8 @@ export function StudentDetail() {
 
           {/* Assessments, Interventions, Notes, Goals */}
           <div className="grid md:grid-cols-2 gap-6 mb-6">
-            <div className="rounded border overflow-hidden bg-[var(--color-bg-surface)]" style={{ borderColor: 'var(--color-border)' }}>
-              <h2 className="text-lg font-medium p-4 border-b" style={{ fontFamily: 'var(--font-family)', borderColor: 'var(--color-border)' }}>Assessments</h2>
+            <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
+              <h2 className="text-lg font-medium p-4 border-b" style={{ fontFamily: 'var(--font-family)', borderColor: '#E2E8F0', color: '#1F2937' }}>Assessments</h2>
               <div className="overflow-x-auto max-h-64 overflow-y-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -503,8 +622,9 @@ export function StudentDetail() {
                         <td className="p-3">{a.assessment_period}</td>
                         <td className="p-3">
                           {(a as Assessment & { score_normalized?: number }).score_value ??
-                            (a as Assessment & { score_normalized?: number }).score_normalized ??
-                            '—'}
+                            ((a as Assessment & { score_normalized?: number }).score_normalized != null
+                              ? Number((a as Assessment & { score_normalized?: number }).score_normalized).toFixed(1)
+                              : '—')}
                         </td>
                         <td className="p-3">{(a as Assessment & { assessment_date?: string; effective_date?: string }).assessment_date ?? (a as { effective_date?: string }).effective_date ?? '—'}</td>
                       </tr>
@@ -513,8 +633,8 @@ export function StudentDetail() {
                 </table>
               </div>
             </div>
-            <div className="rounded border overflow-hidden bg-[var(--color-bg-surface)]" style={{ borderColor: 'var(--color-border)' }}>
-              <h2 className="text-lg font-medium p-4 border-b" style={{ fontFamily: 'var(--font-family)', borderColor: 'var(--color-border)' }}>Interventions</h2>
+            <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
+              <h2 className="text-lg font-medium p-4 border-b" style={{ fontFamily: 'var(--font-family)', borderColor: '#E2E8F0', color: '#1F2937' }}>Interventions</h2>
               <div className="overflow-x-auto max-h-64 overflow-y-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -543,8 +663,8 @@ export function StudentDetail() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-6">
-            <div className="rounded border overflow-hidden bg-[var(--color-bg-surface)]" style={{ borderColor: 'var(--color-border)' }}>
-              <h2 className="text-lg font-medium p-4 border-b" style={{ fontFamily: 'var(--font-family)', borderColor: 'var(--color-border)' }}>Notes</h2>
+            <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
+              <h2 className="text-lg font-medium p-4 border-b" style={{ fontFamily: 'var(--font-family)', borderColor: '#E2E8F0', color: '#1F2937' }}>Notes</h2>
               <div className="overflow-x-auto max-h-48 overflow-y-auto p-4">
                 {notes.length === 0 ? (
                   <p className="text-[var(--caption-size)] opacity-70">No notes yet.</p>
@@ -564,8 +684,8 @@ export function StudentDetail() {
                 )}
               </div>
             </div>
-            <div className="rounded border overflow-hidden bg-[var(--color-bg-surface)]" style={{ borderColor: 'var(--color-border)' }}>
-              <h2 className="text-lg font-medium p-4 border-b" style={{ fontFamily: 'var(--font-family)', borderColor: 'var(--color-border)' }}>Goals</h2>
+            <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
+              <h2 className="text-lg font-medium p-4 border-b" style={{ fontFamily: 'var(--font-family)', borderColor: '#E2E8F0', color: '#1F2937' }}>Goals</h2>
               <div className="overflow-x-auto max-h-48 overflow-y-auto p-4">
                 {goals.length === 0 ? (
                   <p className="text-[var(--caption-size)] opacity-70">No goals set.</p>
@@ -577,8 +697,8 @@ export function StudentDetail() {
                         {(g as { baseline_score?: number }).baseline_score != null &&
                           (g as { target_score?: number }).target_score != null && (
                             <span className="ml-2 opacity-80">
-                              {(g as { baseline_score: number }).baseline_score} →{' '}
-                              {(g as { target_score: number }).target_score}
+                              {Number((g as { baseline_score: number }).baseline_score).toFixed(1)} →{' '}
+                              {Number((g as { target_score: number }).target_score).toFixed(1)}
                             </span>
                           )}
                       </li>

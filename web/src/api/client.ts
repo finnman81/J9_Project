@@ -68,6 +68,7 @@ export interface TeacherKpisResponse {
 
 export interface PriorityStudentRow {
   enrollment_id: string
+  student_uuid?: string
   display_name: string
   teacher_name?: string | null
   school_year: string
@@ -94,9 +95,13 @@ export interface PriorityStudentsResponse {
 
 export interface GrowthMetricsResponse {
   median_growth: number | null
+  avg_growth: number | null
   pct_improving: number
   pct_declining: number
+  pct_stable: number
   students_with_growth_data: number
+  max_growth: number | null
+  min_growth: number | null
 }
 
 export interface DistributionResponse {
@@ -104,6 +109,44 @@ export interface DistributionResponse {
   avg_by_grade: { grade_level: string; average_score: number; pct_needs_support?: number }[]
   support_threshold: number | null
   benchmark_threshold: number | null
+}
+
+export interface SupportTrendRow {
+  school_year: string
+  pct_needs_support: number
+  needs_support: number
+  total: number
+}
+
+export interface SupportTrendResponse {
+  rows: SupportTrendRow[]
+}
+
+export interface AssessmentAverageRow {
+  subject_area: string
+  assessment_type: string
+  average_score: number
+  count: number
+}
+
+export interface AssessmentAveragesResponse {
+  rows: AssessmentAverageRow[]
+}
+
+export interface ErbComparisonRow {
+  grade_level: string
+  subtest: string
+  subtest_label: string
+  our_avg_stanine: number
+  ind_avg_stanine: number
+  diff_stanine: number
+  our_avg_percentile: number
+  ind_avg_percentile: number
+  diff_percentile: number
+}
+
+export interface ErbComparisonResponse {
+  rows: ErbComparisonRow[]
 }
 
 export interface EnrollmentDetailResponse {
@@ -117,7 +160,7 @@ export interface EnrollmentDetailResponse {
     has_active_intervention: boolean
     goal_status: string
   }
-  score_over_time: { period: string; score: number }[]
+  score_over_time: { period: string; score: number; assessment_type?: string }[]
   assessments: Assessment[]
   interventions: Intervention[]
   notes: Record<string, unknown>[]
@@ -139,7 +182,7 @@ export interface StudentDetailByUuidResponse {
     has_active_intervention: boolean
     goal_status: string
   }
-  score_over_time: { period: string; score: number }[]
+  score_over_time: { period: string; score: number; assessment_type?: string }[]
   assessments: Assessment[]
   interventions: Intervention[]
   notes: Record<string, unknown>[]
@@ -215,6 +258,18 @@ export const api = {
   getDistribution: (params?: MetricsParams) => {
     const q = buildMetricsParams(params)
     return request<DistributionResponse>(`/api/metrics/distribution${q}`)
+  },
+  getSupportTrend: (params?: MetricsParams) => {
+    const q = buildMetricsParams(params)
+    return request<SupportTrendResponse>(`/api/metrics/support-trend${q}`)
+  },
+  getAssessmentAverages: (params?: MetricsParams) => {
+    const q = buildMetricsParams(params)
+    return request<AssessmentAveragesResponse>(`/api/metrics/assessment-averages${q}`)
+  },
+  getErbComparison: (params?: MetricsParams) => {
+    const q = buildMetricsParams(params)
+    return request<ErbComparisonResponse>(`/api/metrics/erb-comparison${q}`)
   },
   getDashboardReading: (params?: { grade_level?: string; class_name?: string; teacher_name?: string; school_year?: string }) => {
     const q = new URLSearchParams()

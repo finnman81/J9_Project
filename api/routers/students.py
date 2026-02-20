@@ -195,9 +195,15 @@ def get_enrollment_detail(
         raise HTTPException(status_code=404, detail="Enrollment not found")
     subject_area = "Reading" if subject.lower() == "reading" else "Math"
     support = get_enrollment_support_status(enrollment_id, subject_area)
-    growth = get_enrollment_growth(enrollment_id, subject_area, school_year=school_year)
+    # Use enrollment's school_year when not provided so trend row is found (v_growth_last_two is per year)
+    growth_year = school_year or (en.get("school_year") if en else None)
+    growth = get_enrollment_growth(enrollment_id, subject_area, school_year=growth_year)
     assessments_df = get_enrollment_assessments(enrollment_id, school_year=school_year)
     interventions_df = get_enrollment_interventions(enrollment_id)
+    # Filter interventions by requested subject so Math page shows only Math interventions
+    if not interventions_df.empty and "subject_area" in interventions_df.columns:
+        subj = interventions_df["subject_area"].astype(str).str.strip().str.lower()
+        interventions_df = interventions_df.loc[subj == subject_area.lower()]
     notes_df = get_enrollment_notes(enrollment_id)
     goals_df = get_enrollment_goals(enrollment_id)
 
@@ -223,7 +229,12 @@ def get_enrollment_detail(
             if s is not None and pd.notna(s):
                 period = row.get("assessment_period") or ""
                 yr = row.get("school_year") or ""
-                score_over_time.append({"period": f"{period} {yr}".strip(), "score": float(s)})
+                assessment_type = row.get("assessment_type") or ""
+                score_over_time.append({
+                    "period": f"{period} {yr}".strip(),
+                    "score": float(s),
+                    "assessment_type": assessment_type,
+                })
 
     return {
         "enrollment": {k: v for k, v in en.items() if v is not None},
@@ -389,7 +400,12 @@ def get_student_detail_by_uuid(
             if s is not None and pd.notna(s):
                 period = row.get("assessment_period") or ""
                 yr = row.get("school_year") or ""
-                score_over_time.append({"period": f"{period} {yr}".strip(), "score": float(s)})
+                assessment_type = row.get("assessment_type") or ""
+                score_over_time.append({
+                    "period": f"{period} {yr}".strip(),
+                    "score": float(s),
+                    "assessment_type": assessment_type,
+                })
 
     # Display name from first enrollment record
     display_name = all_enrollment_records[0].get("display_name", "Unknown")
