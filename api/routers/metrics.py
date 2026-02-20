@@ -104,15 +104,18 @@ def _kpis_from_support_status(
     # Support status: On Track / Monitor / Needs Support (tier: Core / Strategic / Intensive)
     support_status = df.get("support_status")
     monitor = (support_status == "Monitor").sum() if support_status is not None else 0
-    needs = df["tier"].isin(["Intensive", "Strategic"]).sum()
+    needs = df["tier"].isin(["Intensive", "Strategic"]).sum() if "tier" in df.columns else 0
     # Support gap = Needs Support with no active intervention
     need_df = df[df["tier"].isin(["Intensive", "Strategic"])]
     support_gap = (need_df["has_active_intervention"].eq(False).sum() if "has_active_intervention" in need_df.columns else 0) if not need_df.empty else 0
     covered = need_df["has_active_intervention"].eq(True).sum() if not need_df.empty else 0
     overdue = (df["days_since_assessment"] > 90).sum() if "days_since_assessment" in df.columns else 0
-    days = df["days_since_assessment"].dropna()
+    days = df["days_since_assessment"].dropna() if "days_since_assessment" in df.columns else pd.Series(dtype=float)
     days = days[days >= 0]
-    median_days = round(float(days.median()), 1) if len(days) else None
+    try:
+        median_days = round(float(days.median()), 1) if len(days) > 0 and pd.notna(days.median()) else None
+    except (ValueError, TypeError):
+        median_days = None
 
     # Assessed this window: latest_period + school_year match
     assessed_window = 0
@@ -167,12 +170,22 @@ def get_teacher_kpis(
             grade_level=grade_level,
             class_name=class_name,
         )
+        if df is None or df.empty:
+            # Return empty KPIs instead of error - frontend handles empty state
+            return _kpis_from_support_status(
+                pd.DataFrame(),
+                current_period=current_period or None,
+                current_school_year=current_school_year or school_year,
+            )
         return _kpis_from_support_status(
             df,
             current_period=current_period or None,
             current_school_year=current_school_year or school_year,
         )
     except Exception as e:
+        import traceback
+        print(f"ERROR in get_teacher_kpis: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -210,6 +223,8 @@ def get_priority_students(
             grade_level=grade_level,
             class_name=class_name,
         )
+        if df is None:
+            df = pd.DataFrame()
         df = _dedupe_priority_by_student(df)
         if df is None or df.empty:
             return {
@@ -248,6 +263,9 @@ def get_priority_students(
             "total_flagged": len(flagged),
         }
     except Exception as e:
+        import traceback
+        print(f"ERROR in get_priority_students: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 

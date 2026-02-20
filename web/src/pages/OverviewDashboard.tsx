@@ -85,21 +85,40 @@ export function OverviewDashboard() {
     setLoading(true)
     setError(null)
     const params = metricsParams
+    console.log('[OverviewDashboard] Fetching metrics with params:', params)
     Promise.all([
-      api.getTeacherKpis(params).catch(() => null),
-      api.getPriorityStudents(params).catch(() => null),
-      api.getGrowthMetrics(params).catch(() => null),
-      api.getDistribution(params).catch(() => null),
+      api.getTeacherKpis(params).catch((err) => {
+        console.error('[OverviewDashboard] getTeacherKpis error:', err)
+        return null
+      }),
+      api.getPriorityStudents(params).catch((err) => {
+        console.error('[OverviewDashboard] getPriorityStudents error:', err)
+        return null
+      }),
+      api.getGrowthMetrics(params).catch((err) => {
+        console.error('[OverviewDashboard] getGrowthMetrics error:', err)
+        return null
+      }),
+      api.getDistribution(params).catch((err) => {
+        console.error('[OverviewDashboard] getDistribution error:', err)
+        return null
+      }),
     ])
       .then(([k, p, g, d]) => {
+        console.log('[OverviewDashboard] Received responses:', { kpis: !!k, priority: !!p, growth: !!g, distribution: !!d })
         setKpis(k ?? null)
         setPriority(p ?? null)
         setGrowth(g ?? null)
         setDistribution(d ?? null)
         setLastSynced(new Date())
-        if (!k && !p) setError('Metrics unavailable. Run migration_v3 and ensure student_enrollments exist.')
+        if (!k && !p) {
+          const errorMsg = 'Metrics unavailable. Run migration_v3 and ensure student_enrollments exist.'
+          console.error('[OverviewDashboard]', errorMsg)
+          setError(errorMsg)
+        }
       })
       .catch((err) => {
+        console.error('[OverviewDashboard] Promise.all error:', err)
         setError(err?.message ?? String(err))
         setKpis(null)
         setPriority(null)
