@@ -17,14 +17,27 @@ export function TeacherDashboard() {
   }, [])
 
   useEffect(() => {
-    if (!selectedTeacher) {
-      setData(null)
-      return
+    let cancelled = false
+    const run = async () => {
+      await Promise.resolve()
+      if (cancelled) return
+      if (!selectedTeacher) {
+        setData(null)
+        return
+      }
+      setLoading(true)
+      const result = await api.getTeacherDashboard(selectedTeacher, schoolYear, isMath ? 'Math' : 'Reading')
+      if (cancelled) return
+      setData(result)
+      setLoading(false)
     }
-    setLoading(true)
-    api.getTeacherDashboard(selectedTeacher, schoolYear, isMath ? 'Math' : 'Reading')
-      .then(setData)
-      .finally(() => setLoading(false))
+    run().catch(() => {
+      if (cancelled) return
+      setLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [selectedTeacher, schoolYear, isMath])
 
   const title = 'Teacher Dashboard'

@@ -7,7 +7,6 @@ import {
   type PriorityStudentsResponse,
   type GrowthMetricsResponse,
   type DistributionResponse,
-  type PriorityStudentRow,
 } from '../api/client'
 import { RiskBadge } from '../components/RiskBadge'
 import { TrendChip } from '../components/TrendChip'
@@ -82,51 +81,42 @@ export function OverviewDashboard() {
   }, [])
 
   useEffect(() => {
-    setLoading(true)
-    setError(null)
-    const params = metricsParams
-    console.log('[OverviewDashboard] Fetching metrics with params:', params)
-    Promise.all([
-      api.getTeacherKpis(params).catch((err) => {
-        console.error('[OverviewDashboard] getTeacherKpis error:', err)
-        return null
-      }),
-      api.getPriorityStudents(params).catch((err) => {
-        console.error('[OverviewDashboard] getPriorityStudents error:', err)
-        return null
-      }),
-      api.getGrowthMetrics(params).catch((err) => {
-        console.error('[OverviewDashboard] getGrowthMetrics error:', err)
-        return null
-      }),
-      api.getDistribution(params).catch((err) => {
-        console.error('[OverviewDashboard] getDistribution error:', err)
-        return null
-      }),
-    ])
-      .then(([k, p, g, d]) => {
-        console.log('[OverviewDashboard] Received responses:', { kpis: !!k, priority: !!p, growth: !!g, distribution: !!d })
-        setKpis(k ?? null)
-        setPriority(p ?? null)
-        setGrowth(g ?? null)
-        setDistribution(d ?? null)
-        setLastSynced(new Date())
-        if (!k && !p) {
-          const errorMsg = 'Metrics unavailable. Run migration_v3 and ensure student_enrollments exist.'
-          console.error('[OverviewDashboard]', errorMsg)
-          setError(errorMsg)
-        }
-      })
-      .catch((err) => {
-        console.error('[OverviewDashboard] Promise.all error:', err)
-        setError(err?.message ?? String(err))
-        setKpis(null)
-        setPriority(null)
-        setGrowth(null)
-        setDistribution(null)
-      })
-      .finally(() => setLoading(false))
-  }, [metricsParams.teacher_name, metricsParams.school_year, metricsParams.grade_level, metricsParams.class_name, metricsParams.current_period, metricsParams.current_school_year, subjectParam])
+    let cancelled = false
+    const run = async () => {
+      await Promise.resolve()
+      if (cancelled) return
+      setLoading(true)
+      setError(null)
+      const [k, p, g, d] = await Promise.all([
+        api.getTeacherKpis(metricsParams).catch(() => null),
+        api.getPriorityStudents(metricsParams).catch(() => null),
+        api.getGrowthMetrics(metricsParams).catch(() => null),
+        api.getDistribution(metricsParams).catch(() => null),
+      ])
+      if (cancelled) return
+      setKpis(k ?? null)
+      setPriority(p ?? null)
+      setGrowth(g ?? null)
+      setDistribution(d ?? null)
+      setLastSynced(new Date())
+      if (!k && !p) {
+        setError('Metrics unavailable. Run migration_v3 and ensure student_enrollments exist.')
+      }
+      setLoading(false)
+    }
+    run().catch((err) => {
+      if (cancelled) return
+      setError(err?.message ?? String(err))
+      setKpis(null)
+      setPriority(null)
+      setGrowth(null)
+      setDistribution(null)
+      setLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [metricsParams])
 
   const resetFilters = () => setFilter({})
 
@@ -149,7 +139,7 @@ export function OverviewDashboard() {
     if (kpiFilter === 'declining') list = list.filter((r) => r.trend === 'Declining')
     if (kpiFilter === 'no_intervention') list = list.filter((r) => !r.has_active_intervention && (r.tier === 'Intensive' || r.tier === 'Strategic'))
     return list
-  }, [priority?.rows, searchStudent, kpiFilter])
+  }, [priority, searchStudent, kpiFilter])
 
   const histogramData = useMemo(() => {
     if (!distribution?.bins?.length) return []
@@ -160,7 +150,7 @@ export function OverviewDashboard() {
       bin_min: b.bin_min,
       bin_max: b.bin_max,
     }))
-  }, [distribution?.bins])
+  }, [distribution])
 
   const distributionYMax = useMemo(() => {
     if (!histogramData.length) return 50

@@ -17,7 +17,7 @@ try:
 except ImportError:
     pass
 
-def test_endpoint(name, func, *args, **kwargs):
+def run_endpoint_check(name, func, *args, **kwargs):
     """Test an API endpoint function."""
     print(f"\n{'='*70}")
     print(f"Testing: {name}")
@@ -53,17 +53,17 @@ def main():
     
     # Test with Reading subject
     print("\n📋 Testing with subject='Reading'")
-    test_endpoint("get_teacher_kpis", get_teacher_kpis, subject="Reading")
-    test_endpoint("get_priority_students", get_priority_students, subject_area="Reading")
-    test_endpoint("get_growth_metrics", get_growth_metrics, subject="Reading")
-    test_endpoint("get_distribution", get_distribution, subject="Reading")
+    run_endpoint_check("get_teacher_kpis", get_teacher_kpis, subject="Reading")
+    run_endpoint_check("get_priority_students", get_priority_students, subject="Reading")
+    run_endpoint_check("get_growth_metrics", get_growth_metrics, subject="Reading")
+    run_endpoint_check("get_distribution", get_distribution, subject="Reading")
     
     # Test with Math subject
     print("\n📋 Testing with subject='Math'")
-    test_endpoint("get_teacher_kpis", get_teacher_kpis, subject="Math")
-    test_endpoint("get_priority_students", get_priority_students, subject_area="Math")
-    test_endpoint("get_growth_metrics", get_growth_metrics, subject="Math")
-    test_endpoint("get_distribution", get_distribution, subject="Math")
+    run_endpoint_check("get_teacher_kpis", get_teacher_kpis, subject="Math")
+    run_endpoint_check("get_priority_students", get_priority_students, subject="Math")
+    run_endpoint_check("get_growth_metrics", get_growth_metrics, subject="Math")
+    run_endpoint_check("get_distribution", get_distribution, subject="Math")
     
     # Test the underlying view
     print("\n📋 Testing underlying view: get_v_support_status")
