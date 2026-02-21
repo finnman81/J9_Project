@@ -2,8 +2,12 @@
 Metrics API: teacher KPIs, priority students, growth, distribution.
 Uses SQL views v_support_status, v_priority_students, v_growth_last_two.
 """
+import logging
+import time
 import pandas as pd
 from fastapi import APIRouter, HTTPException
+
+logger = logging.getLogger(__name__)
 
 from core.database import (
     get_v_support_status,
@@ -162,6 +166,7 @@ def get_teacher_kpis(
     current_school_year: str | None = None,
 ):
     """Return KPI strip. Use current_period + current_school_year for '%% assessed this window' (e.g. Fall, 2024-25)."""
+    t0 = time.perf_counter()
     try:
         df = get_v_support_status(
             teacher_name=teacher_name,
@@ -172,21 +177,22 @@ def get_teacher_kpis(
         )
         if df is None or df.empty:
             # Return empty KPIs instead of error - frontend handles empty state
+            logger.info("metrics/teacher-kpis %.3fs", time.perf_counter() - t0)
             return _kpis_from_support_status(
                 pd.DataFrame(),
                 current_period=current_period or None,
                 current_school_year=current_school_year or school_year,
             )
-        return _kpis_from_support_status(
+        out = _kpis_from_support_status(
             df,
             current_period=current_period or None,
             current_school_year=current_school_year or school_year,
         )
+        logger.info("metrics/teacher-kpis %.3fs", time.perf_counter() - t0)
+        return out
     except Exception as e:
-        import traceback
-        print(f"ERROR in get_teacher_kpis: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_teacher_kpis failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 def _reasons_to_chips(reasons: str | None) -> list[str]:
@@ -215,6 +221,7 @@ def get_priority_students(
     class_name: str | None = None,
 ):
     """Return priority students: support_status, reason_chips, default sort (support gap > declining > overdue > lowest score)."""
+    t0 = time.perf_counter()
     try:
         df = get_v_priority_students(
             teacher_name=teacher_name,
@@ -227,6 +234,7 @@ def get_priority_students(
             df = pd.DataFrame()
         df = _dedupe_priority_by_student(df)
         if df is None or df.empty:
+            logger.info("metrics/priority-students %.3fs", time.perf_counter() - t0)
             return {
                 "rows": [],
                 "flagged_intensive": 0,
@@ -256,6 +264,7 @@ def get_priority_students(
             reasons_str = r.get("reasons")
             chips = _reasons_to_chips(reasons_str)
             rows.append({**r, "reason_chips": chips})
+        logger.info("metrics/priority-students %.3fs", time.perf_counter() - t0)
         return {
             "rows": rows,
             "flagged_intensive": int(intensive),
@@ -263,10 +272,8 @@ def get_priority_students(
             "total_flagged": len(flagged),
         }
     except Exception as e:
-        import traceback
-        print(f"ERROR in get_priority_students: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_priority_students failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/metrics/growth")
@@ -281,6 +288,7 @@ def get_growth_metrics(
 
     Includes median/average growth, % Improving/Declining/Stable, and best/worst changes.
     """
+    t0 = time.perf_counter()
     try:
         df = get_v_growth_last_two(
             teacher_name=teacher_name,
@@ -290,6 +298,7 @@ def get_growth_metrics(
             class_name=class_name,
         )
         if df is None or df.empty or "growth" not in df.columns:
+            logger.info("metrics/growth %.3fs", time.perf_counter() - t0)
             return {
                 "median_growth": None,
                 "avg_growth": None,
@@ -303,6 +312,7 @@ def get_growth_metrics(
         growth = df["growth"].dropna()
         n = len(growth)
         if n == 0:
+            logger.info("metrics/growth %.3fs", time.perf_counter() - t0)
             return {
                 "median_growth": None,
                 "avg_growth": None,
@@ -321,6 +331,7 @@ def get_growth_metrics(
         avg_growth = round(float(growth.mean()), 1)
         max_growth = round(float(growth.max()), 1)
         min_growth = round(float(growth.min()), 1)
+        logger.info("metrics/growth %.3fs", time.perf_counter() - t0)
         return {
             "median_growth": median_growth,
             "avg_growth": avg_growth,
@@ -331,8 +342,9 @@ def get_growth_metrics(
             "max_growth": max_growth,
             "min_growth": min_growth,
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("get_growth_metrics failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/metrics/distribution")
@@ -344,6 +356,7 @@ def get_distribution(
     class_name: str | None = None,
 ):
     """Return histogram bins, benchmark/support thresholds, and avg by grade."""
+    t0 = time.perf_counter()
     try:
         df = get_v_support_status(
             teacher_name=teacher_name,
@@ -392,14 +405,16 @@ def get_distribution(
         if thresholds_df is not None and not thresholds_df.empty:
             support_threshold = round(float(thresholds_df["support_threshold"].median()), 1) if "support_threshold" in thresholds_df.columns else None
             benchmark_threshold = round(float(thresholds_df["benchmark_threshold"].median()), 1) if "benchmark_threshold" in thresholds_df.columns else None
+        logger.info("metrics/distribution %.3fs", time.perf_counter() - t0)
         return {
             "bins": bins,
             "avg_by_grade": avg_by_grade,
             "support_threshold": support_threshold,
             "benchmark_threshold": benchmark_threshold,
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("get_distribution failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/metrics/support-trend")
@@ -435,8 +450,9 @@ def get_support_trend(
         grp = grp.sort_values("school_year")
         rows = dataframe_to_records(grp.rename(columns={"needs_count": "needs_support"}))
         return {"rows": rows}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("get_support_trend failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/metrics/assessment-averages")
@@ -483,9 +499,10 @@ def get_assessment_averages(
             params.append(school_year)
         query += " GROUP BY a.subject_area, a.assessment_type ORDER BY a.subject_area, a.assessment_type" if grade_level else " GROUP BY subject_area, assessment_type ORDER BY subject_area, assessment_type"
         df = pd.read_sql_query(query, conn, params=params)
-    except Exception as e:
+    except Exception:
         conn.close()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_assessment_averages failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
     conn.close()
     if df is None or df.empty:
         return {"rows": []}
@@ -533,9 +550,10 @@ def get_erb_comparison(
             query += " AND a.school_year = %s"
             params.append(school_year)
         df = pd.read_sql_query(query, conn, params=params)
-    except Exception as e:
+    except Exception:
         conn.close()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("get_erb_comparison failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
     conn.close()
 
     if df is None or df.empty:

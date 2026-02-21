@@ -2,6 +2,8 @@
 FastAPI application for School Assessment System.
 Run from project root: uvicorn api.main:app --reload
 """
+import logging
+import os
 import sys
 from pathlib import Path
 
@@ -17,10 +19,18 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from api.routers import students, assessments, interventions, dashboard, teacher, metrics
+
+logger = logging.getLogger(__name__)
+
+# CORS: allowlist from env (comma-separated); default dev origins
+_cors_raw = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").strip()
+CORS_ORIGINS = [o.strip() for o in _cors_raw.split(",") if o.strip()] if _cors_raw else ["http://localhost:5173"]
+ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS
 
 app = FastAPI(
     title="School Assessment System API",
@@ -28,11 +38,38 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
+def _error_detail(message: str, code: str = "error") -> dict:
+    """Structured error payload for API responses."""
+    return {"message": message, "code": code}
+
+
+@app.exception_handler(HTTPException)
+def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Return consistent detail shape: { message, code }."""
+    detail = exc.detail
+    if isinstance(detail, dict) and "message" in detail:
+        payload = detail
+    else:
+        payload = _error_detail(str(detail) if detail else "Error", "error")
+    return JSONResponse(status_code=exc.status_code, content={"detail": payload})
+
+
+@app.exception_handler(Exception)
+def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Centralized handler: do not leak exception details to client."""
+    logger.exception("Unhandled exception")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": _error_detail("Internal server error", "internal_error")},
+    )
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=ALLOW_CREDENTIALS,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

@@ -20,7 +20,7 @@ See **Quick Start** section above for full setup instructions. Summary:
 1. Install Python dependencies: `pip install -r requirements.txt`
 2. Install frontend dependencies: `cd web && npm install`
 3. Configure database URL in `.env`
-4. Initialize database schema (if needed): `python -c "from core.database import init_database; init_database()"`
+4. Initialize database schema (if needed): see [docs/SCHEMA_BOOTSTRAP.md](docs/SCHEMA_BOOTSTRAP.md) for the recommended migration-first path, or `python -c "from core.database import init_database; init_database()"` for legacy-only.
 
 For migrating existing data, see `scripts/migrate_data.py` and other scripts in `scripts/`.
 
@@ -54,10 +54,10 @@ For migrating existing data, see `scripts/migrate_data.py` and other scripts in 
      ```
    - Or set `DATABASE_URL` as an environment variable in your shell
 
-4. **Initialize database schema** (if needed):
-   ```bash
-   python -c "from core.database import init_database; init_database()"
-   ```
+4. **Initialize database schema** (if needed):  
+   Prefer the **migration-first** path so the dashboard and enrollment-based features work. See **[docs/SCHEMA_BOOTSTRAP.md](docs/SCHEMA_BOOTSTRAP.md)** for the full sequence (base schema → enrollment identity → `python run_migration_v3.py` → optional V4 indexes).  
+   For a minimal legacy-only setup you can run:  
+   `python -c "from core.database import init_database; init_database()"`
 
 ### Launch the Application
 
@@ -109,7 +109,7 @@ The app uses PostgreSQL (Supabase) with enrollment-based identity:
 - **v_support_status**: View computing tier (Core/Strategic/Intensive) from benchmark thresholds
 - **v_growth_last_two**: View computing trend (Improving/Stable/Declining) from last two assessments
 
-See `schema/` directory for full schema definitions and migrations.
+See [docs/SCHEMA_BOOTSTRAP.md](docs/SCHEMA_BOOTSTRAP.md) for the canonical schema setup order and `schema/` for SQL migrations.
 
 ## Usage
 

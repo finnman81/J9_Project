@@ -2,8 +2,11 @@
 Teacher dashboard API: data filtered by teacher and school year.
 Uses v_support_status / v_priority_students when available; fallback to legacy.
 """
+import logging
 import pandas as pd
 from fastapi import APIRouter
+
+logger = logging.getLogger(__name__)
 
 from core.database import (
     get_all_students,
@@ -37,7 +40,8 @@ def _tier_to_long(tier: str) -> str:
 def list_teachers():
     try:
         df = get_all_enrollments()
-    except Exception:
+    except Exception as e:
+        logger.debug("list_teachers: get_all_enrollments failed: %s", e)
         df = pd.DataFrame()
     if df.empty:
         df = get_all_students()
@@ -118,8 +122,8 @@ def teacher_dashboard(
                 "priority_students": priority_records,
                 "growth_summary": growth_summary,
             }
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Teacher dashboard view path skipped: %s", e)
 
     # Legacy path
     students_df = get_all_students(teacher_name=teacher, school_year=school_year)

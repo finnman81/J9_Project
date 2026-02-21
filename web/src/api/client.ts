@@ -1,5 +1,8 @@
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
+/** Optional options for API requests (e.g. AbortSignal for cancellation). */
+export type ApiRequestOptions = { signal?: AbortSignal }
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const url = path.startsWith('http') ? path : `${API_BASE}${path}`
   const res = await fetch(url, {
@@ -12,6 +15,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     try {
       const j = JSON.parse(text)
       if (typeof j?.detail === 'string') message = j.detail
+      else if (j?.detail && typeof j.detail === 'object' && typeof (j.detail as { message?: string }).message === 'string')
+        message = (j.detail as { message: string }).message
       else if (Array.isArray(j?.detail)) message = j.detail.map((d: { msg?: string }) => d?.msg ?? d).join('; ')
     } catch {
       // keep message as text
@@ -243,33 +248,33 @@ export const api = {
     const query = q.toString()
     return request<StudentDetailByUuidResponse>(`/api/student-detail/${studentUuid}${query ? `?${query}` : ''}`)
   },
-  getTeacherKpis: (params?: MetricsParams) => {
+  getTeacherKpis: (params?: MetricsParams, options?: ApiRequestOptions) => {
     const q = buildMetricsParams(params)
-    return request<TeacherKpisResponse>(`/api/metrics/teacher-kpis${q}`)
+    return request<TeacherKpisResponse>(`/api/metrics/teacher-kpis${q}`, { signal: options?.signal })
   },
-  getPriorityStudents: (params?: MetricsParams) => {
+  getPriorityStudents: (params?: MetricsParams, options?: ApiRequestOptions) => {
     const q = buildMetricsParams(params)
-    return request<PriorityStudentsResponse>(`/api/metrics/priority-students${q}`)
+    return request<PriorityStudentsResponse>(`/api/metrics/priority-students${q}`, { signal: options?.signal })
   },
-  getGrowthMetrics: (params?: MetricsParams) => {
+  getGrowthMetrics: (params?: MetricsParams, options?: ApiRequestOptions) => {
     const q = buildMetricsParams(params)
-    return request<GrowthMetricsResponse>(`/api/metrics/growth${q}`)
+    return request<GrowthMetricsResponse>(`/api/metrics/growth${q}`, { signal: options?.signal })
   },
-  getDistribution: (params?: MetricsParams) => {
+  getDistribution: (params?: MetricsParams, options?: ApiRequestOptions) => {
     const q = buildMetricsParams(params)
-    return request<DistributionResponse>(`/api/metrics/distribution${q}`)
+    return request<DistributionResponse>(`/api/metrics/distribution${q}`, { signal: options?.signal })
   },
-  getSupportTrend: (params?: MetricsParams) => {
+  getSupportTrend: (params?: MetricsParams, options?: ApiRequestOptions) => {
     const q = buildMetricsParams(params)
-    return request<SupportTrendResponse>(`/api/metrics/support-trend${q}`)
+    return request<SupportTrendResponse>(`/api/metrics/support-trend${q}`, { signal: options?.signal })
   },
-  getAssessmentAverages: (params?: MetricsParams) => {
+  getAssessmentAverages: (params?: MetricsParams, options?: ApiRequestOptions) => {
     const q = buildMetricsParams(params)
-    return request<AssessmentAveragesResponse>(`/api/metrics/assessment-averages${q}`)
+    return request<AssessmentAveragesResponse>(`/api/metrics/assessment-averages${q}`, { signal: options?.signal })
   },
-  getErbComparison: (params?: MetricsParams) => {
+  getErbComparison: (params?: MetricsParams, options?: ApiRequestOptions) => {
     const q = buildMetricsParams(params)
-    return request<ErbComparisonResponse>(`/api/metrics/erb-comparison${q}`)
+    return request<ErbComparisonResponse>(`/api/metrics/erb-comparison${q}`, { signal: options?.signal })
   },
   getDashboardReading: (params?: { grade_level?: string; class_name?: string; teacher_name?: string; school_year?: string }) => {
     const q = new URLSearchParams()
@@ -289,10 +294,12 @@ export const api = {
     const query = q.toString()
     return request<DashboardResponse>(`/api/dashboard/math${query ? `?${query}` : ''}`)
   },
-  getDashboardFilters: () => request<{ grade_levels: string[]; classes: string[]; teachers: string[]; school_years: string[] }>('/api/dashboard/filters'),
-  getTeachers: () => request<{ teachers: string[] }>('/api/teacher/teachers'),
-  getTeacherDashboard: (teacher: string, school_year: string, subject: 'Reading' | 'Math' = 'Reading') =>
-    request<TeacherDashboardResponse>(`/api/teacher/dashboard?teacher=${encodeURIComponent(teacher)}&school_year=${encodeURIComponent(school_year)}&subject=${subject}`),
+  getDashboardFilters: (options?: ApiRequestOptions) =>
+    request<{ grade_levels: string[]; classes: string[]; teachers: string[]; school_years: string[] }>('/api/dashboard/filters', { signal: options?.signal }),
+  getTeachers: (options?: ApiRequestOptions) =>
+    request<{ teachers: string[] }>('/api/teacher/teachers', { signal: options?.signal }),
+  getTeacherDashboard: (teacher: string, school_year: string, subject: 'Reading' | 'Math' = 'Reading', options?: ApiRequestOptions) =>
+    request<TeacherDashboardResponse>(`/api/teacher/dashboard?teacher=${encodeURIComponent(teacher)}&school_year=${encodeURIComponent(school_year)}&subject=${subject}`, { signal: options?.signal }),
   postAssessment: (body: AddAssessmentBody) => request<{ ok: boolean }>('/api/assessments', { method: 'POST', body: JSON.stringify(body) }),
   postIntervention: (body: AddInterventionBody) => request<{ ok: boolean }>('/api/interventions', { method: 'POST', body: JSON.stringify(body) }),
 }

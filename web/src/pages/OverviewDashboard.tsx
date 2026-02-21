@@ -77,23 +77,24 @@ export function OverviewDashboard() {
   }, [filter, subjectParam, filters?.school_years])
 
   useEffect(() => {
-    api.getDashboardFilters().then(setFilters).catch(() => setFilters(null))
+    const ac = new AbortController()
+    api.getDashboardFilters({ signal: ac.signal }).then(setFilters).catch(() => setFilters(null))
+    return () => ac.abort()
   }, [])
 
   useEffect(() => {
-    let cancelled = false
+    const ac = new AbortController()
+    const signal = ac.signal
     const run = async () => {
-      await Promise.resolve()
-      if (cancelled) return
       setLoading(true)
       setError(null)
       const [k, p, g, d] = await Promise.all([
-        api.getTeacherKpis(metricsParams).catch(() => null),
-        api.getPriorityStudents(metricsParams).catch(() => null),
-        api.getGrowthMetrics(metricsParams).catch(() => null),
-        api.getDistribution(metricsParams).catch(() => null),
+        api.getTeacherKpis(metricsParams, { signal }).catch(() => null),
+        api.getPriorityStudents(metricsParams, { signal }).catch(() => null),
+        api.getGrowthMetrics(metricsParams, { signal }).catch(() => null),
+        api.getDistribution(metricsParams, { signal }).catch(() => null),
       ])
-      if (cancelled) return
+      if (signal.aborted) return
       setKpis(k ?? null)
       setPriority(p ?? null)
       setGrowth(g ?? null)
@@ -105,7 +106,7 @@ export function OverviewDashboard() {
       setLoading(false)
     }
     run().catch((err) => {
-      if (cancelled) return
+      if (err?.name === 'AbortError' || signal.aborted) return
       setError(err?.message ?? String(err))
       setKpis(null)
       setPriority(null)
@@ -113,9 +114,7 @@ export function OverviewDashboard() {
       setDistribution(null)
       setLoading(false)
     })
-    return () => {
-      cancelled = true
-    }
+    return () => ac.abort()
   }, [metricsParams])
 
   const resetFilters = () => setFilter({})

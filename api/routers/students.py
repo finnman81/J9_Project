@@ -127,7 +127,9 @@ def list_enrollments(
             teacher_name=teacher_name,
             school_year=school_year,
         )
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug("get_all_enrollments failed, using legacy students: %s", e)
         df = get_all_students(
             grade_level=grade_level,
             class_name=class_name,

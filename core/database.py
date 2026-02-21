@@ -61,15 +61,21 @@ def _dict_cursor(conn):
     return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
 # ---------------------------------------------------------------------------
-# Schema initialisation (run once via Supabase SQL Editor or this helper)
+# Schema initialisation (LEGACY FALLBACK — prefer migration-first bootstrap)
+# ---------------------------------------------------------------------------
+# Canonical setup: run schema SQL migrations in order (see docs/SCHEMA_BOOTSTRAP.md).
+# This helper creates only the legacy students/assessments/interventions/etc. tables;
+# it does not create students_core, student_enrollments, or migration_v3 views.
 # ---------------------------------------------------------------------------
 
 def init_database():
-    """Initialize database schema.
+    """Initialize legacy database schema (students, assessments, interventions, etc.).
     
-    Safe to call repeatedly -- uses IF NOT EXISTS.  For Supabase the
-    preferred path is running schema/supabase_schema.sql in the SQL Editor, but
-    this function works as a fallback for local Postgres too.
+    LEGACY FALLBACK only. For new and existing deployments use the migration-first
+    path: run schema/supabase_schema.sql (or supabase_schema_math.sql), then
+    enrollment identity migrations, then run_migration_v3.py, then schema/migration_v4_perf_indexes.sql.
+    See docs/SCHEMA_BOOTSTRAP.md.
+    Safe to call repeatedly (IF NOT EXISTS). Use for local Postgres when not using SQL files.
     """
     conn = get_db_connection()
     cursor = conn.cursor()

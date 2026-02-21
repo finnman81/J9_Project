@@ -107,3 +107,9 @@ student_goals
 - For a given `enrollment_id`, get `student_uuid` from `student_enrollments`.
 - If `student_enrollments.legacy_student_id` exists, use it for literacy_scores / math_scores / interventions.
 - Otherwise resolve one `legacy_student_id` from `student_id_map` where `student_uuid` = enrollment’s `student_uuid` (e.g. `LIMIT 1` if multiple).
+
+---
+
+## Canonical bootstrap
+
+For the full schema setup order (base schema → this identity model → dashboard views), see **[docs/SCHEMA_BOOTSTRAP.md](../docs/SCHEMA_BOOTSTRAP.md)**.

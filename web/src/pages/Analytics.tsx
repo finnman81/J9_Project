@@ -40,10 +40,12 @@ export function Analytics() {
 
   // Load available school years for optional year filter (shared with dashboard)
   useEffect(() => {
+    const ac = new AbortController()
     api
-      .getDashboardFilters()
+      .getDashboardFilters({ signal: ac.signal })
       .then((f) => setFilters({ school_years: f.school_years }))
       .catch(() => setFilters(null))
+    return () => ac.abort()
   }, [])
 
   const metricsParams: MetricsParams = useMemo(() => {
@@ -64,18 +66,17 @@ export function Analytics() {
   )
 
   useEffect(() => {
-    let cancelled = false
+    const ac = new AbortController()
+    const signal = ac.signal
     const run = async () => {
-      await Promise.resolve()
-      if (cancelled) return
       setLoading(true)
       const [dist, trend, averages, erb] = await Promise.all([
-        api.getDistribution(metricsParams).catch(() => null),
-        api.getSupportTrend(metricsParams).catch(() => null),
-        api.getAssessmentAverages(assessmentAveragesParams).catch(() => null),
-        api.getErbComparison(metricsParams).catch(() => null),
+        api.getDistribution(metricsParams, { signal }).catch(() => null),
+        api.getSupportTrend(metricsParams, { signal }).catch(() => null),
+        api.getAssessmentAverages(assessmentAveragesParams, { signal }).catch(() => null),
+        api.getErbComparison(metricsParams, { signal }).catch(() => null),
       ])
-      if (cancelled) return
+      if (signal.aborted) return
       setDistribution(dist)
       setSupportTrend(trend)
       setAssessmentAverages(averages)
@@ -83,12 +84,10 @@ export function Analytics() {
       setLoading(false)
     }
     run().catch(() => {
-      if (cancelled) return
+      if (signal.aborted) return
       setLoading(false)
     })
-    return () => {
-      cancelled = true
-    }
+    return () => ac.abort()
   }, [metricsParams, assessmentAveragesParams])
 
   const avgByGradeOrdered = distribution?.avg_by_grade?.length ? sortByGrade(distribution.avg_by_grade) : []

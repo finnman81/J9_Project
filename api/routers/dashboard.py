@@ -1,8 +1,11 @@
 """
 Dashboard API: reading and math overview data with filters, KPIs, tiers, priority, growth.
 """
+import logging
 import pandas as pd
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+
+logger = logging.getLogger(__name__)
 
 from core.database import (
     get_all_students,
@@ -192,8 +195,8 @@ def _build_dashboard(
                 "score_distribution": score_distribution,
                 "by_grade": by_grade,
             }
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("View-based dashboard path skipped: %s", e)
 
     # Prefer enrollments (students_core + student_enrollments); fallback to legacy students table
     enrollments_df = pd.DataFrame()
@@ -204,8 +207,8 @@ def _build_dashboard(
             teacher_name=teacher_name,
             school_year=school_year,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("get_all_enrollments failed, using legacy path: %s", e)
 
     if enrollments_df.empty:
         students_df = get_all_students(
@@ -361,9 +364,9 @@ def dashboard_reading(
 ):
     try:
         return _build_dashboard("Reading", grade_level, class_name, teacher_name, school_year)
-    except Exception as e:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("dashboard_reading failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/dashboard/math")
@@ -375,9 +378,9 @@ def dashboard_math(
 ):
     try:
         return _build_dashboard("Math", grade_level, class_name, teacher_name, school_year)
-    except Exception as e:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("dashboard_math failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/dashboard/filters")
@@ -385,7 +388,8 @@ def dashboard_filters():
     """Return distinct grade_level, class_name, teacher_name, school_year for filter dropdowns."""
     try:
         df = get_all_enrollments()
-    except Exception:
+    except Exception as e:
+        logger.debug("dashboard_filters: get_all_enrollments failed, using legacy: %s", e)
         df = pd.DataFrame()
     if df.empty:
         df = get_all_students()

@@ -13,31 +13,30 @@ export function TeacherDashboard() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    api.getTeachers().then((r) => setTeachers(r.teachers))
+    const ac = new AbortController()
+    api.getTeachers({ signal: ac.signal }).then((r) => setTeachers(r.teachers)).catch(() => {})
+    return () => ac.abort()
   }, [])
 
   useEffect(() => {
-    let cancelled = false
+    const ac = new AbortController()
+    const signal = ac.signal
     const run = async () => {
-      await Promise.resolve()
-      if (cancelled) return
       if (!selectedTeacher) {
         setData(null)
         return
       }
       setLoading(true)
-      const result = await api.getTeacherDashboard(selectedTeacher, schoolYear, isMath ? 'Math' : 'Reading')
-      if (cancelled) return
+      const result = await api.getTeacherDashboard(selectedTeacher, schoolYear, isMath ? 'Math' : 'Reading', { signal })
+      if (signal.aborted) return
       setData(result)
       setLoading(false)
     }
-    run().catch(() => {
-      if (cancelled) return
+    run().catch((err) => {
+      if (err?.name === 'AbortError' || signal.aborted) return
       setLoading(false)
     })
-    return () => {
-      cancelled = true
-    }
+    return () => ac.abort()
   }, [selectedTeacher, schoolYear, isMath])
 
   const title = 'Teacher Dashboard'

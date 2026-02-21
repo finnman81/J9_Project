@@ -38,3 +38,11 @@ Thumbs.db
 *.egg-info/
 dist/
 build/
+
+# Frontend dependency and cache (do not commit)
+node_modules/
+.vite/
+**/node_modules/
+**/.vite/
+**/dist/
+**/build/
