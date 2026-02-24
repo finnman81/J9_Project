@@ -1,4 +1,5 @@
 import { Outlet, NavLink, useLocation, useParams } from 'react-router-dom'
+import { UserButton } from '@clerk/clerk-react'
 import { useTheme } from '../themes/ThemeContext'
 
 const SUBJECTS = ['reading', 'math'] as const
@@ -36,11 +37,18 @@ export function Layout() {
           color: theme.palette.textOnPrimary,
         }}
       >
-        <div className="px-4 py-5 border-b border-white/12">
-          <h1 className="text-base font-semibold" style={{ fontFamily: 'var(--font-family)' }}>
-            {theme.appTitle}
-          </h1>
-          <p className="text-xs opacity-85 mt-1">School Assessment System</p>
+        <div className="px-4 py-5 border-b border-white/12 flex items-center justify-between">
+          <div>
+            <h1 className="text-base font-semibold" style={{ fontFamily: 'var(--font-family)' }}>
+              {theme.appTitle}
+            </h1>
+            <p className="text-xs opacity-85 mt-1">School Assessment System</p>
+          </div>
+          <UserButton
+            appearance={{
+              elements: { avatarBox: 'w-8 h-8' },
+            }}
+          />
         </div>
         <nav className="flex-1 py-5 px-4">
           <div className="flex rounded-lg bg-white/10 p-0.5 mb-6">

@@ -1,6 +1,8 @@
 """
 FastAPI application for School Assessment System.
-Run from project root: uvicorn api.main:app --reload
+
+Dev:  uvicorn api.main:app --reload
+Prod: gunicorn api.main:app -k uvicorn.workers.UvicornWorker (see Dockerfile)
 """
 import logging
 import os
@@ -19,23 +21,52 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import Depends, FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from api.auth import get_current_user
 from api.routers import students, assessments, interventions, dashboard, teacher, metrics
 
 logger = logging.getLogger(__name__)
 
-# CORS: allowlist from env (comma-separated); default dev origins
-_cors_raw = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").strip()
-CORS_ORIGINS = [o.strip() for o in _cors_raw.split(",") if o.strip()] if _cors_raw else ["http://localhost:5173"]
+# ---------------------------------------------------------------------------
+# Environment
+# ---------------------------------------------------------------------------
+_ENV = os.environ.get("APP_ENV", "development").lower()
+_is_production = _ENV in ("production", "prod")
+
+# ---------------------------------------------------------------------------
+# CORS
+# ---------------------------------------------------------------------------
+_cors_raw = os.environ.get("CORS_ORIGINS", "").strip()
+
+if _is_production and not _cors_raw:
+    raise RuntimeError(
+        "CORS_ORIGINS must be set in production (comma-separated allowlist). "
+        "Example: CORS_ORIGINS=https://app.yourschool.com"
+    )
+
+if _is_production and not os.environ.get("CLERK_JWT_ISSUER"):
+    raise RuntimeError(
+        "CLERK_JWT_ISSUER must be set in production. "
+        "Example: CLERK_JWT_ISSUER=https://your-instance.clerk.accounts.dev"
+    )
+
+if _cors_raw:
+    CORS_ORIGINS = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+else:
+    CORS_ORIGINS = ["http://localhost:5173", "http://localhost:3000"]
+    logger.info("CORS_ORIGINS not set — using dev defaults: %s", CORS_ORIGINS)
+
 ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS
 
 app = FastAPI(
     title="School Assessment System API",
     description="API for literacy and math assessment tracking",
     version="1.0.0",
+    docs_url="/docs" if not _is_production else None,
+    redoc_url="/redoc" if not _is_production else None,
 )
 
 
@@ -73,12 +104,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(students.router, prefix="/api", tags=["students"])
-app.include_router(assessments.router, prefix="/api", tags=["assessments"])
-app.include_router(interventions.router, prefix="/api", tags=["interventions"])
-app.include_router(dashboard.router, prefix="/api", tags=["dashboard"])
-app.include_router(teacher.router, prefix="/api", tags=["teacher"])
-app.include_router(metrics.router, prefix="/api", tags=["metrics"])
+# All /api routes require a valid Clerk JWT.  The /health endpoint stays public.
+_auth = [Depends(get_current_user)]
+
+app.include_router(students.router, prefix="/api", tags=["students"], dependencies=_auth)
+app.include_router(assessments.router, prefix="/api", tags=["assessments"], dependencies=_auth)
+app.include_router(interventions.router, prefix="/api", tags=["interventions"], dependencies=_auth)
+app.include_router(dashboard.router, prefix="/api", tags=["dashboard"], dependencies=_auth)
+app.include_router(teacher.router, prefix="/api", tags=["teacher"], dependencies=_auth)
+app.include_router(metrics.router, prefix="/api", tags=["metrics"], dependencies=_auth)
 
 
 @app.get("/health")

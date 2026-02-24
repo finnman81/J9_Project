@@ -3,9 +3,22 @@ const API_BASE = import.meta.env.VITE_API_URL || ''
 /** Optional options for API requests (e.g. AbortSignal for cancellation). */
 export type ApiRequestOptions = { signal?: AbortSignal }
 
+type FetchFn = typeof fetch
+
+/**
+ * `_fetchFn` can be swapped to an authenticated version via `setApiFetch()`.
+ * The AuthApiProvider calls this on mount so every subsequent request carries
+ * the Clerk JWT automatically.
+ */
+let _fetchFn: FetchFn = fetch
+
+export function setApiFetch(fn: FetchFn) {
+  _fetchFn = fn
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const url = path.startsWith('http') ? path : `${API_BASE}${path}`
-  const res = await fetch(url, {
+  const res = await _fetchFn(url, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...options?.headers },
   })

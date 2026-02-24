@@ -1,0 +1,43 @@
+# Frontend (built and deployed separately via Amplify)
+web/
+node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.cursor/
+.idea/
+
+# Docs and schema (not needed at runtime)
+docs/
+schema/
+scripts/
+tests/
+*.md
+
+# Data files
+*.csv
+*.xlsx
+*.xls
+
+# GitHub workflows
+.github/
+
+# Misc
+*.log
+*.tmp

@@ -34,23 +34,14 @@ for _np_float_type in [np.float64, np.float32, np.float16]:
 # ---------------------------------------------------------------------------
 
 def get_db_connection():
-    """Get PostgreSQL database connection to Supabase.
+    """Get PostgreSQL database connection.
 
-    Uses DATABASE_URL from environment first (for API/CLI). If unset, tries
-    Streamlit secrets (for Streamlit app). This allows the API to run without
-    Streamlit installed.
+    Reads DATABASE_URL from environment (set via .env, Secrets Manager, etc.).
     """
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
-        try:
-            import streamlit as st
-            db_url = st.secrets.get("DATABASE_URL") or st.secrets["DATABASE_URL"]
-        except Exception:
-            pass
-    if not db_url:
         raise RuntimeError(
-            "DATABASE_URL not found. Set it as an environment variable "
-            "or in .streamlit/secrets.toml for Streamlit."
+            "DATABASE_URL not found. Set it as an environment variable or in .env."
         )
     conn = psycopg2.connect(db_url)
     return conn
