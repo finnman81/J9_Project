@@ -33,11 +33,11 @@ def check_migration():
         load_dotenv(PROJECT_ROOT / ".env")
     except ImportError:
         pass
-    
+
     url = os.environ.get("DATABASE_URL")
     if not url:
         return False
-    
+
     try:
         import psycopg2
         conn = psycopg2.connect(url)
@@ -61,13 +61,13 @@ def main():
     print("School Assessment System - Starting Application")
     print("=" * 70)
     print()
-    
+
     # Check if .env exists
     env_file = PROJECT_ROOT / ".env"
     if not env_file.exists():
         print("⚠️  Warning: .env file not found. Make sure DATABASE_URL is set.")
         print()
-    
+
     # Check if migration_v3 has been applied
     print("🔍 Checking database migration status...")
     migration_applied = check_migration()
@@ -87,7 +87,7 @@ def main():
     else:
         print("✓ Migration V3 is applied")
         print()
-    
+
     # Find an available port for the backend
     print("🔍 Finding available port for backend...")
     backend_port = find_available_port(start_port=8000)
@@ -96,14 +96,14 @@ def main():
     else:
         print(f"   Using port {backend_port}")
     print()
-    
+
     # Update frontend .env file with the detected port
     web_env_file = PROJECT_ROOT / "web" / ".env"
     web_env_content = f"VITE_API_URL=http://127.0.0.1:{backend_port}\n"
     web_env_file.write_text(web_env_content, encoding="utf-8")
     print(f"✓ Updated web/.env with API URL: http://127.0.0.1:{backend_port}")
     print()
-    
+
     # Start backend API server in a new PowerShell window
     print(f"🚀 Starting FastAPI backend server (port {backend_port})...")
     backend_cmd = [
@@ -118,11 +118,11 @@ def main():
     )
     print("   ✓ Backend window opened")
     print()
-    
+
     # Wait a moment for backend to start
     import time
     time.sleep(2)
-    
+
     # Start frontend dev server in a new PowerShell window
     print("🚀 Starting React frontend dev server (port 5173)...")
     frontend_cmd = [
@@ -137,7 +137,7 @@ def main():
     )
     print("   ✓ Frontend window opened")
     print()
-    
+
     print("=" * 70)
     print("✅ Both servers are starting!")
     print()
@@ -153,7 +153,7 @@ def main():
     print("⚠️  To stop the servers, close the PowerShell windows or press Ctrl+C in each.")
     print("=" * 70)
     print()
-    
+
     # Keep script running (optional - user can close this window too)
     try:
         input("Press Enter to exit this window (servers will keep running)...")

@@ -21,18 +21,18 @@ def main():
     print("Database Status Check")
     print("=" * 70)
     print()
-    
+
     url = os.environ.get("DATABASE_URL")
     if not url:
         print("❌ DATABASE_URL not set in .env")
         print("   Please set DATABASE_URL in .env file")
         return
-    
+
     import psycopg2
     try:
         conn = psycopg2.connect(url)
         cur = conn.cursor()
-        
+
         # Check migration_v3 views
         print("📋 Checking Migration V3 Views:")
         views_to_check = [
@@ -41,7 +41,7 @@ def main():
             'v_growth_last_two',
             'v_teacher_roster'
         ]
-        
+
         for view_name in views_to_check:
             cur.execute("""
                 SELECT EXISTS (
@@ -53,9 +53,9 @@ def main():
             exists = cur.fetchone()[0]
             status = "✓" if exists else "✗"
             print(f"   {status} {view_name}")
-        
+
         print()
-        
+
         # Check required tables
         print("📋 Checking Required Tables:")
         tables_to_check = [
@@ -64,7 +64,7 @@ def main():
             'assessments',
             'benchmark_thresholds'
         ]
-        
+
         for table_name in tables_to_check:
             cur.execute("""
                 SELECT EXISTS (
@@ -76,12 +76,12 @@ def main():
             exists = cur.fetchone()[0]
             status = "✓" if exists else "✗"
             print(f"   {status} {table_name}")
-        
+
         print()
-        
+
         # Check data counts
         print("📊 Data Counts:")
-        
+
         # students_core
         try:
             cur.execute("SELECT COUNT(*) FROM students_core")
@@ -89,7 +89,7 @@ def main():
             print(f"   students_core: {count} rows")
         except Exception as e:
             print(f"   students_core: ERROR - {e}")
-        
+
         # student_enrollments
         try:
             cur.execute("SELECT COUNT(*) FROM student_enrollments")
@@ -99,7 +99,7 @@ def main():
                 print("      ⚠️  WARNING: No enrollments found! Dashboard needs enrollments.")
         except Exception as e:
             print(f"   student_enrollments: ERROR - {e}")
-        
+
         # assessments
         try:
             cur.execute("SELECT COUNT(*) FROM assessments")
@@ -107,7 +107,7 @@ def main():
             print(f"   assessments: {count} rows")
         except Exception as e:
             print(f"   assessments: ERROR - {e}")
-        
+
         # benchmark_thresholds
         try:
             cur.execute("SELECT COUNT(*) FROM benchmark_thresholds")
@@ -117,9 +117,9 @@ def main():
                 print("      ⚠️  WARNING: No benchmark thresholds! Dashboard needs thresholds.")
         except Exception as e:
             print(f"   benchmark_thresholds: ERROR - {e}")
-        
+
         print()
-        
+
         # Test v_support_status view if it exists
         cur.execute("""
             SELECT EXISTS (
@@ -129,7 +129,7 @@ def main():
             )
         """)
         view_exists = cur.fetchone()[0]
-        
+
         if view_exists:
             print("🧪 Testing v_support_status view:")
             try:
@@ -147,9 +147,9 @@ def main():
         else:
             print("🧪 v_support_status view does not exist")
             print("   Run: python run_migration_v3.py")
-        
+
         print()
-        
+
         # Check if assessments have enrollment_id
         try:
             cur.execute("""
@@ -169,10 +169,10 @@ def main():
                 print("      ⚠️  Some assessments are missing enrollment_id")
         except Exception as e:
             print(f"   ERROR: {e}")
-        
+
         cur.close()
         conn.close()
-        
+
         print()
         print("=" * 70)
         print("Summary:")
@@ -182,7 +182,7 @@ def main():
         print("If student_enrollments is empty: Create enrollments for your students")
         print("If benchmark_thresholds is empty: Run threshold setup scripts")
         print()
-        
+
     except psycopg2.Error as e:
         print(f"❌ Database connection error: {e}")
         print()

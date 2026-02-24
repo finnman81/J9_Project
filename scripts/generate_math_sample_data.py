@@ -46,7 +46,7 @@ print(f"Found {len(students)} student records")
 def get_score_range(measure: str, grade: str, period: str, ability: float) -> tuple:
     """Generate realistic score range based on benchmark thresholds and student ability."""
     thresholds = get_math_benchmark_thresholds(measure, grade, period)
-    
+
     # Default ranges for grades/measures without benchmark data
     # These ranges are used when ability is applied, so they represent the full possible range
     default_ranges = {
@@ -65,7 +65,7 @@ def get_score_range(measure: str, grade: str, period: str, ability: float) -> tu
             'Math_Composite': {'Fall': (25, 55), 'Winter': (35, 60), 'Spring': (40, 65)},
         },
     }
-    
+
     if not thresholds:
         # Use default ranges for grades without benchmark data
         if grade in default_ranges and measure in default_ranges[grade]:
@@ -83,7 +83,7 @@ def get_score_range(measure: str, grade: str, period: str, ability: float) -> tu
                     effective_ability = ability
                 score = lo + (hi - lo) * effective_ability
                 return (max(1, int(score)), int(score))
-        
+
         # Generic fallback ranges
         if measure == 'NIF':
             return (15, 50)
@@ -105,18 +105,18 @@ def get_score_range(measure: str, grade: str, period: str, ability: float) -> tu
             else:
                 return (25, 60)
         return (10, 50)
-    
+
     above = thresholds['above_benchmark']
     goal = thresholds['benchmark_goal']
     cut = thresholds['cut_point_risk']
-    
+
     # Generate score based on ability (0.0-1.0)
     # With Beta(5,1) distribution: ~80% have ability > 0.7, ~15% have 0.4-0.7, ~5% have < 0.4
     # ability 0.0-0.25: Well Below (below cut) - ~5%
     # ability 0.25-0.50: Below (cut to goal) - ~10%
     # ability 0.50-0.75: At (goal to above) - ~20%
     # ability 0.75-1.0: Above (above threshold) - ~65%
-    
+
     if ability < 0.25:
         # Well Below Benchmark (~5% of students)
         score = random.uniform(max(1, cut * 0.75), cut * 0.95)
@@ -135,7 +135,7 @@ def get_score_range(measure: str, grade: str, period: str, ability: float) -> tu
         else:
             # Math_Composite - use high multiplier
             score = random.uniform(above * 1.3, above * 2.0)
-    
+
     return (max(1, int(score)), int(score))
 
 # ---------------------------------------------------------------------------
@@ -148,10 +148,10 @@ for _, stu in students.iterrows():
     sid = int(stu['student_id'])
     grade = stu['grade_level']
     grade_alias = GRADE_ALIASES.get(grade, '')
-    
+
     # Get measures for this grade
     measures = MATH_MEASURES_BY_GRADE.get(grade_alias, [])
-    
+
     # Handle grades not in MATH_MEASURES_BY_GRADE
     if not measures:
         if grade == 'Kindergarten':
@@ -162,22 +162,22 @@ for _, stu in students.iterrows():
             measures = ['Math_Computation', 'Math_Concepts_Application', 'Math_Composite']
         else:
             continue
-    
+
     # Generate student ability (consistent across periods)
     # Very heavily skewed distribution: most students doing well
     # Beta(5, 1) creates: ~80% At/Above Benchmark, ~15% Below, ~5% Well Below
     ability_raw = np.random.beta(5, 1)  # Very strong right skew - most students perform well
     ability = max(0.25, min(0.98, ability_raw))
-    
+
     # Determine which periods to generate based on grade
     if grade == 'First':
         periods = ['Fall', 'Winter', 'Spring']
     else:
         periods = ['Fall', 'Winter', 'Spring']
-    
+
     for period in periods:
         period_alias = PERIOD_MAP.get(period, period)
-        
+
         for measure in measures:
             # Skip if no benchmark data for this measure/period
             thresholds = get_math_benchmark_thresholds(measure, grade, period_alias)
@@ -191,13 +191,13 @@ for _, stu in students.iterrows():
                     continue
                 if measure == 'MNF' and period not in ['Fall', 'Winter']:
                     continue
-            
+
             # Generate score
             score_val, score_raw = get_score_range(measure, grade, period_alias, ability)
-            
+
             # Ensure score is never 0
             score_val = max(1, score_val)
-            
+
             # Add some variation (but keep it positive)
             # For high-ability students, don't reduce scores too much
             if ability > 0.7:
@@ -205,7 +205,7 @@ for _, stu in students.iterrows():
             else:
                 variation_factor = 0.08
             score_val = max(1, int(score_val + np.random.normal(0, max(1, score_val * variation_factor))))
-            
+
             # For high-ability students, ensure minimum score to guarantee 70+ normalized
             if ability > 0.75:
                 # Ensure raw score is high enough to normalize to 70+
@@ -219,12 +219,12 @@ for _, stu in students.iterrows():
                     score_val = max(score_val, min_raw)
                 elif measure == 'Math_Concepts_Application':
                     score_val = max(score_val, 42)  # 42/60 = 70%
-            
+
             # Normalize score AFTER adding variation
             score_normalized = process_math_assessment_score(
                 measure, str(score_val), grade, period
             )
-            
+
             # Fallback if normalization failed
             if score_normalized is None or score_normalized == 0:
                 # Use a simple percentage if normalization fails
@@ -235,7 +235,7 @@ for _, stu in students.iterrows():
                     score_normalized = min((score_val / max_val) * 100, 100)
                 else:
                     score_normalized = min(score_val * 5, 100)  # Rough estimate
-            
+
             assessment_rows.append((
                 sid, measure, period, school_year,
                 str(score_val), score_normalized,
@@ -270,31 +270,31 @@ for student_id in students_processed:
     # Get student info
     student_info = students[students['student_id'] == student_id].iloc[0]
     grade_level = student_info['grade_level']
-    
+
     # Get all math assessments for this student
     assessments = get_student_assessments(student_id, school_year)
     math_assessments = assessments[assessments['subject_area'] == 'Math']
-    
+
     if math_assessments.empty:
         continue
-    
+
     # Process each assessment period
     for period in ['Fall', 'Winter', 'Spring', 'EOY']:
         period_assessments = math_assessments[math_assessments['assessment_period'] == period]
-        
+
         if period_assessments.empty:
             continue
-        
+
         # Calculate components
         components = calculate_math_component_scores(period_assessments, period, grade_level)
         overall_score, component_scores = calculate_overall_math_score(components, grade_level)
-        
+
         if overall_score is None:
             continue
-        
+
         # Determine risk level
         risk_level = determine_math_risk_level(overall_score)
-        
+
         # Calculate trend
         trend = 'Unknown'
         if period != 'Fall':
@@ -305,7 +305,7 @@ for student_id in students_processed:
                 prev_overall, _ = calculate_overall_math_score(prev_components, grade_level)
                 if prev_overall is not None:
                     trend = calculate_math_trend(overall_score, prev_overall)
-        
+
         math_score_rows.append((
             student_id, school_year, period,
             round(overall_score, 2),
@@ -347,7 +347,7 @@ STANINE_PCT_MID = {1: 4, 2: 11, 3: 23, 4: 40, 5: 50, 6: 60, 7: 77, 8: 89, 9: 96}
 
 for _, stu in erb_students.iterrows():
     sid = int(stu['student_id'])
-    
+
     # Base ability from math scores if available
     math_scores_df = pd.read_sql_query(
         """SELECT overall_math_score FROM math_scores 
@@ -355,24 +355,24 @@ for _, stu in erb_students.iterrows():
            ORDER BY calculated_at DESC LIMIT 1""",
         conn, params=[sid, school_year]
     )
-    
+
     if not math_scores_df.empty:
         math_score = math_scores_df.iloc[0]['overall_math_score']
         # Convert 0-100 score to stanine-like ability (1-9)
         ability = max(1, min(9, (math_score / 100) * 9))
     else:
         ability = max(1, min(9, np.random.normal(5.5, 2.0)))
-    
+
     # Generate ERB Math score
     stanine = int(np.clip(round(ability + np.random.normal(0, 0.9)), 1, 9))
     pct_mid = STANINE_PCT_MID[stanine]
     percentile = int(np.clip(pct_mid + np.random.randint(-6, 7), 1, 99))
     scale_score = int(400 + stanine * 30 + np.random.randint(-15, 16))
     growth_pct = int(np.clip(np.random.normal(50, 18), 1, 99))
-    
+
     # Format score value (canonical format)
     score_value = f"stanine:{stanine}|percentile:{percentile}|scale:{scale_score}|growth:{growth_pct}"
-    
+
     erb_math_rows.append((
         sid, 'ERB_Mathematics', 'Spring', school_year,
         score_value, float(percentile),

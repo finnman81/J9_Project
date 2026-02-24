@@ -46,25 +46,25 @@ def main():
     print("=" * 70)
     print("API Endpoints Test")
     print("=" * 70)
-    
+
     # Import API functions
     from api.routers.metrics import get_teacher_kpis, get_priority_students, get_growth_metrics, get_distribution
     from core.database import get_v_support_status
-    
+
     # Test with Reading subject
     print("\n📋 Testing with subject='Reading'")
     run_endpoint_check("get_teacher_kpis", get_teacher_kpis, subject="Reading")
     run_endpoint_check("get_priority_students", get_priority_students, subject="Reading")
     run_endpoint_check("get_growth_metrics", get_growth_metrics, subject="Reading")
     run_endpoint_check("get_distribution", get_distribution, subject="Reading")
-    
+
     # Test with Math subject
     print("\n📋 Testing with subject='Math'")
     run_endpoint_check("get_teacher_kpis", get_teacher_kpis, subject="Math")
     run_endpoint_check("get_priority_students", get_priority_students, subject="Math")
     run_endpoint_check("get_growth_metrics", get_growth_metrics, subject="Math")
     run_endpoint_check("get_distribution", get_distribution, subject="Math")
-    
+
     # Test the underlying view
     print("\n📋 Testing underlying view: get_v_support_status")
     try:
@@ -72,7 +72,7 @@ def main():
         print(f"✓ Reading: {len(df_reading)} rows")
         if len(df_reading) > 0:
             print(f"  Columns: {list(df_reading.columns)[:10]}")
-        
+
         df_math = get_v_support_status(subject_area="Math")
         print(f"✓ Math: {len(df_math)} rows")
         if len(df_math) > 0:
@@ -81,7 +81,7 @@ def main():
         print(f"❌ ERROR: {e}")
         import traceback
         traceback.print_exc()
-    
+
     print("\n" + "=" * 70)
     print("Summary")
     print("=" * 70)

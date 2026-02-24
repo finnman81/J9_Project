@@ -57,21 +57,21 @@ _MATH_BENCHMARKS: Dict[Tuple[str, str, str], Tuple[float, float, float]] = {
     ('Math_Composite', '2', 'BOY'): (32, 24, 16),
     ('Math_Composite', '2', 'MOY'): (57, 46, 45),
     ('Math_Composite', '2', 'EOY'): (57, 46, 45),
-    
+
     # ── Number Identification Fluency (NIF) ───────────────────────────────
     ('NIF', '1', 'BOY'): (33, 27, 16),
-    
+
     # ── Next Number Fluency (NNF) ─────────────────────────────────────────
     ('NNF', '1', 'BOY'): (14, 12, 9),
-    
+
     # ── Advanced Quantity Discrimination (AQD) ─────────────────────────────
     ('AQD', '1', 'BOY'): (13, 10, 6),
     ('AQD', '1', 'MOY'): (22, 19, 14),
-    
+
     # ── Missing Number Fluency (MNF) ───────────────────────────────────────
     ('MNF', '1', 'BOY'): (6, 4, 2),
     ('MNF', '1', 'MOY'): (9, 8, 6),
-    
+
     # ── Computation ────────────────────────────────────────────────────────
     ('Math_Computation', '1', 'BOY'): (6, 4, 2),
     ('Math_Computation', '1', 'MOY'): (14, 11, 7),
@@ -84,7 +84,7 @@ _MATH_BENCHMARKS: Dict[Tuple[str, str, str], Tuple[float, float, float]] = {
     ('Math_Computation', '4', 'BOY'): (14, 12, 0),
     ('Math_Computation', '4', 'MOY'): (18, 15, 0),
     ('Math_Computation', '4', 'EOY'): (20, 17, 0),
-    
+
     # ── Concepts & Application ────────────────────────────────────────────
     ('Math_Concepts_Application', '2', 'BOY'): (18, 14, 0),
     ('Math_Concepts_Application', '2', 'MOY'): (31, 24, 0),
@@ -95,7 +95,7 @@ _MATH_BENCHMARKS: Dict[Tuple[str, str, str], Tuple[float, float, float]] = {
     ('Math_Concepts_Application', '4', 'BOY'): (30, 25, 0),
     ('Math_Concepts_Application', '4', 'MOY'): (45, 38, 0),
     ('Math_Concepts_Application', '4', 'EOY'): (50, 42, 0),
-    
+
     # ── Math Composite (estimated for grades 3-4) ──────────────────────────
     ('Math_Composite', '3', 'BOY'): (28, 22, 0),
     ('Math_Composite', '3', 'MOY'): (42, 35, 0),
@@ -139,7 +139,7 @@ MATH_MEASURES_BY_GRADE = {
 
 def get_math_benchmark_status(measure: str, grade, period, score: float) -> Optional[str]:
     """Return benchmark status for a given math score.
-    
+
     Returns one of: 'Above Benchmark', 'At Benchmark',
     'Below Benchmark', 'Well Below Benchmark', or None if no
     benchmark data exists for the combination.
@@ -148,7 +148,7 @@ def get_math_benchmark_status(measure: str, grade, period, score: float) -> Opti
     p = _p(period)
     if g is None or p is None or score is None:
         return None
-    
+
     # Normalize measure name
     measure_map = {
         'Computation': 'Math_Computation',
@@ -156,11 +156,11 @@ def get_math_benchmark_status(measure: str, grade, period, score: float) -> Opti
         'Concepts_Application': 'Math_Concepts_Application',
     }
     measure = measure_map.get(measure, measure)
-    
+
     key = (measure, g, p)
     if key not in _MATH_BENCHMARKS:
         return None
-    
+
     above, goal, cut = _MATH_BENCHMARKS[key]
     if score >= above:
         return 'Above Benchmark'
@@ -172,7 +172,7 @@ def get_math_benchmark_status(measure: str, grade, period, score: float) -> Opti
 
 def get_math_benchmark_thresholds(measure: str, grade, period) -> Optional[Dict[str, float]]:
     """Return benchmark thresholds for a math measure/grade/period.
-    
+
     Returns dict with keys: above_benchmark, benchmark_goal, cut_point_risk
     or None if no data.
     """
@@ -180,7 +180,7 @@ def get_math_benchmark_thresholds(measure: str, grade, period) -> Optional[Dict[
     p = _p(period)
     if g is None or p is None:
         return None
-    
+
     # Normalize measure name
     measure_map = {
         'Computation': 'Math_Computation',
@@ -188,11 +188,11 @@ def get_math_benchmark_thresholds(measure: str, grade, period) -> Optional[Dict[
         'Concepts_Application': 'Math_Concepts_Application',
     }
     measure = measure_map.get(measure, measure)
-    
+
     key = (measure, g, p)
     if key not in _MATH_BENCHMARKS:
         return None
-    
+
     above, goal, cut = _MATH_BENCHMARKS[key]
     return {
         'above_benchmark': above,
@@ -202,7 +202,7 @@ def get_math_benchmark_thresholds(measure: str, grade, period) -> Optional[Dict[
 
 def get_math_support_level(benchmark_status: Optional[str]) -> str:
     """Map benchmark status to instructional support level (tier).
-    
+
     - At/Above Benchmark → Core (Tier 1)
     - Below Benchmark    → Strategic (Tier 2)
     - Well Below        → Intensive (Tier 3)
@@ -324,7 +324,7 @@ def math_growth_color(classification: Optional[str]) -> str:
 def group_math_students(students_df: pd.DataFrame, scores_df: pd.DataFrame,
                        measure: str = 'Math_Composite') -> pd.DataFrame:
     """Group students into Core/Strategic/Intensive tiers based on math scores.
-    
+
     Parameters
     ----------
     students_df : DataFrame with student_id, student_name, grade_level
@@ -332,7 +332,7 @@ def group_math_students(students_df: pd.DataFrame, scores_df: pd.DataFrame,
                   matching *measure* (e.g. 'Math_Composite' or 'overall_math_score')
     measure     : The Acadience Math measure to group by (or 'overall_math_score'
                   for the app's internal composite).
-    
+
     Returns a DataFrame with columns:
         student_name, grade_level, score, benchmark_status, support_level, weakest_skill
     """
@@ -341,7 +341,7 @@ def group_math_students(students_df: pd.DataFrame, scores_df: pd.DataFrame,
         sid = student['student_id']
         name = student['student_name']
         grade = student['grade_level']
-        
+
         student_scores = scores_df[scores_df['student_id'] == sid]
         if student_scores.empty:
             rows.append({
@@ -350,11 +350,11 @@ def group_math_students(students_df: pd.DataFrame, scores_df: pd.DataFrame,
                 'support_level': 'Unknown', 'weakest_skill': None,
             })
             continue
-        
+
         latest = student_scores.iloc[-1]
         score = latest.get(measure) if measure in latest.index else latest.get('overall_math_score')
         period = latest.get('assessment_period', 'EOY')
-        
+
         # When score is the app's overall_math_score (0-100), use internal thresholds only.
         if measure not in latest.index and score is not None:
             # Internal 0-100 scale only
@@ -373,9 +373,9 @@ def group_math_students(students_df: pd.DataFrame, scores_df: pd.DataFrame,
                     status = 'Below Benchmark'
                 else:
                     status = 'Well Below Benchmark'
-        
+
         support = get_math_support_level(status)
-        
+
         # Identify weakest skill from component columns
         weakest = None
         component_cols = {
@@ -391,7 +391,7 @@ def group_math_students(students_df: pd.DataFrame, scores_df: pd.DataFrame,
                 comp_scores[label] = val
         if comp_scores:
             weakest = min(comp_scores, key=comp_scores.get)
-        
+
         rows.append({
             'student_name': name,
             'grade_level': grade,
@@ -400,5 +400,5 @@ def group_math_students(students_df: pd.DataFrame, scores_df: pd.DataFrame,
             'support_level': support,
             'weakest_skill': weakest,
         })
-    
+
     return pd.DataFrame(rows)

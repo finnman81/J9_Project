@@ -13,12 +13,12 @@ def migrate_excel_to_database(excel_file: str = 'data/normalized_grades.xlsx', s
     """Migrate Excel data to SQLite database"""
     print("Initializing database...")
     init_database()
-    
+
     print(f"Reading Excel file: {excel_file}")
     df = pd.read_excel(excel_file)
-    
+
     print(f"Found {len(df)} records")
-    
+
     # Grade level mapping
     grade_map = {
         'Kindergarten': 'Kindergarten',
@@ -27,7 +27,7 @@ def migrate_excel_to_database(excel_file: str = 'data/normalized_grades.xlsx', s
         'Third': 'Third',
         'Fourth': 'Fourth'
     }
-    
+
     # Assessment type mappings
     assessment_mappings = {
         'Reading_Level_Fall': ('Reading_Level', 'Fall'),
@@ -51,14 +51,14 @@ def migrate_excel_to_database(excel_file: str = 'data/normalized_grades.xlsx', s
         'PAR_Fall': ('Benchmark', 'Fall'),
         'PAR_EOY': ('Benchmark', 'EOY'),
     }
-    
+
     students_created = set()
     assessments_added = 0
-    
+
     for idx, row in df.iterrows():
         student_name = str(row['Student_Name']).strip()
         grade_level = str(row['Grade_Level']).strip()
-        
+
         # Create student (if not already created)
         student_key = (student_name, grade_level, school_year)
         if student_key not in students_created:
@@ -74,26 +74,26 @@ def migrate_excel_to_database(excel_file: str = 'data/normalized_grades.xlsx', s
             # Get existing student ID
             from core.database import get_student_id
             student_id = get_student_id(student_name, grade_level, school_year)
-        
+
         # Process each assessment column
         for col in df.columns:
             if col in ['Student_Name', 'Grade_Level', 'Concerns']:
                 continue
-            
+
             # Skip original columns (we'll use normalized ones)
             if col.endswith('_Original'):
                 continue
-            
+
             # Check if this column maps to an assessment
             if col in assessment_mappings:
                 assessment_type, period = assessment_mappings[col]
                 score_value = row[col]
-                
+
                 # Only add if score exists
                 if pd.notna(score_value) and str(score_value).strip() != '':
                     # Normalize score
                     score_normalized = process_assessment_score(assessment_type, str(score_value))
-                    
+
                     # Add assessment
                     add_assessment(
                         student_id=student_id,
@@ -108,20 +108,20 @@ def migrate_excel_to_database(excel_file: str = 'data/normalized_grades.xlsx', s
                         entered_by='Migration'
                     )
                     assessments_added += 1
-        
+
         # Calculate and save literacy score for each period
         from core.database import get_student_assessments
         student_assessments = get_student_assessments(student_id, school_year)
-        
+
         for period in ['Fall', 'Winter', 'Spring', 'EOY']:
             period_assessments = student_assessments[student_assessments['assessment_period'] == period]
             if not period_assessments.empty:
                 components = calculate_component_scores(period_assessments, period)
                 overall_score, component_scores = calculate_overall_literacy_score(components)
-                
+
                 if overall_score is not None:
                     risk_level = determine_risk_level(overall_score)
-                    
+
                     # Calculate trend (compare to previous period)
                     trend = 'Unknown'
                     if period != 'Fall':
@@ -133,7 +133,7 @@ def migrate_excel_to_database(excel_file: str = 'data/normalized_grades.xlsx', s
                             if prev_overall is not None:
                                 from core.calculations import calculate_trend
                                 trend = calculate_trend(overall_score, prev_overall)
-                    
+
                     save_literacy_score(
                         student_id=student_id,
                         school_year=school_year,
@@ -146,7 +146,7 @@ def migrate_excel_to_database(excel_file: str = 'data/normalized_grades.xlsx', s
                         risk_level=risk_level,
                         trend=trend
                     )
-    
+
     print(f"\nMigration complete!")
     print(f"Students created: {len(students_created)}")
     print(f"Assessments added: {assessments_added}")

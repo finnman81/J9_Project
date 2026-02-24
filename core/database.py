@@ -61,7 +61,7 @@ def _dict_cursor(conn):
 
 def init_database():
     """Initialize legacy database schema (students, assessments, interventions, etc.).
-    
+
     LEGACY FALLBACK only. For new and existing deployments use the migration-first
     path: run schema/supabase_schema.sql (or supabase_schema_math.sql), then
     enrollment identity migrations, then run_migration_v3.py, then schema/migration_v4_perf_indexes.sql.

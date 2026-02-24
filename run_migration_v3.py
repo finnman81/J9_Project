@@ -16,20 +16,20 @@ def main():
     print("Running Migration V3: Teacher-First Dashboard")
     print("=" * 70)
     print()
-    
+
     # Load .env
     try:
         from dotenv import load_dotenv
         load_dotenv(ROOT / ".env")
     except ImportError:
         pass
-    
+
     url = os.environ.get("DATABASE_URL")
     if not url:
         print("❌ ERROR: DATABASE_URL not set.")
         print("   Please set DATABASE_URL in .env file in the project root.")
         sys.exit(1)
-    
+
     # Check if migration already applied (check for v_support_status view)
     import psycopg2
     try:
@@ -45,7 +45,7 @@ def main():
         view_exists = cur.fetchone()[0]
         cur.close()
         conn.close()
-        
+
         if view_exists:
             print("✓ Migration V3 already applied (v_support_status view exists)")
             print()
@@ -57,31 +57,31 @@ def main():
         print(f"⚠️  Warning: Could not check migration status: {e}")
         print("   Proceeding with migration...")
         print()
-    
+
     # Run migration
     migration_file = ROOT / "schema" / "migration_v3_teacher_first.sql"
     if not migration_file.exists():
         print(f"❌ ERROR: Migration file not found: {migration_file}")
         sys.exit(1)
-    
+
     print(f"📄 Reading migration file: {migration_file.name}")
     sql = migration_file.read_text(encoding="utf-8", errors="replace")
-    
+
     print("🔄 Running migration...")
     print("   (This may take a moment...)")
     print()
-    
+
     try:
         conn = psycopg2.connect(url)
         conn.autocommit = True
         cur = conn.cursor()
-        
+
         # Execute migration SQL
         cur.execute(sql)
-        
+
         cur.close()
         conn.close()
-        
+
         print("✅ Migration V3 completed successfully!")
         print()
         print("The following views should now be available:")
@@ -91,7 +91,7 @@ def main():
         print("  • v_growth_last_two")
         print()
         print("You can now start the app with: python start_app.py")
-        
+
     except Exception as e:
         print(f"❌ ERROR running migration: {e}")
         print()

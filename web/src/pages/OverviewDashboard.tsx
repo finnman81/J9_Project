@@ -163,7 +163,7 @@ export function OverviewDashboard() {
     const header = cols.join(',')
     const rows = priorityRows.map((r) =>
       cols.map((c) => {
-        const v = (r as Record<string, unknown>)[c]
+        const v = (r as unknown as Record<string, unknown>)[c]
         const str = v == null ? '' : String(v)
         return str.includes(',') ? `"${str.replace(/"/g, '""')}"` : str
       }).join(',')
@@ -549,9 +549,9 @@ export function OverviewDashboard() {
                     label={{ value: 'Number of students', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fontSize: 12 } }}
                   />
                   <Tooltip
-                    formatter={(value: number, _name: string, props: { payload?: { count?: number; pct?: number } }) => {
-                      const count = props.payload?.count ?? value
-                      const pct = props.payload?.pct ?? 0
+                    formatter={(value: number | undefined, _name?: string, props?: { payload?: { count?: number; pct?: number } }) => {
+                      const count = props?.payload?.count ?? value ?? 0
+                      const pct = props?.payload?.pct ?? 0
                       return [`${count} (${Number(pct).toFixed(1)}%)`, 'Count']
                     }}
                     labelFormatter={(label, payload) => {
@@ -590,7 +590,7 @@ export function OverviewDashboard() {
                 <XAxis dataKey="grade_level" tick={{ fontSize: 14 }} />
                 <YAxis yAxisId="left" domain={[0, 105]} tick={{ fontSize: 14 }} label={{ value: 'Score (pts)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle' } }} />
                 <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 12 }} tickFormatter={(v) => `${v}%`} />
-                <Tooltip formatter={(value: number, name: string) => [name === 'Avg Score' ? Number(value).toFixed(1) : `${Number(value).toFixed(1)}%`, name]} />
+                <Tooltip formatter={(value: number | undefined, name?: string) => [name === 'Avg Score' ? Number(value ?? 0).toFixed(1) : `${Number(value ?? 0).toFixed(1)}%`, name ?? '']} />
                 <ReferenceLine yAxisId="left" y={70} stroke="#22c55e" strokeWidth={1.5} strokeDasharray="4 4" />
                 <Bar yAxisId="left" dataKey="average_score" name="Avg Score" radius={[4, 4, 0, 0]} fill="var(--color-primary)" />
                 <Bar yAxisId="right" dataKey="pct_needs_support" name="% Needs Support" radius={[4, 4, 0, 0]} fill="#f59e0b" />

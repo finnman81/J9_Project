@@ -162,7 +162,7 @@ export function Analytics() {
               <BarChart data={avgByGradeOrdered} margin={{ top: 8, right: 8, left: 32, bottom: 24 }}>
                 <XAxis dataKey="grade_level" tick={{ fontSize: 14 }} />
                 <YAxis domain={[0, 105]} tick={{ fontSize: 14 }} label={{ value: 'Score (pts)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle' } }} />
-                <Tooltip formatter={(value: number) => [typeof value === 'number' ? Number(value).toFixed(1) : value, 'Avg Score (pts)']} />
+                <Tooltip formatter={(value: number | undefined) => [typeof value === 'number' ? Number(value).toFixed(1) : value ?? '—', 'Avg Score (pts)']} />
                 <ReferenceLine y={70} stroke="#22c55e" strokeWidth={1.5} strokeDasharray="4 4" label={{ value: 'Benchmark 70', position: 'right', fontSize: 11 }} />
                 <Bar dataKey="average_score" name="Avg Score (pts)" radius={[4, 4, 0, 0]} fill="var(--color-primary)" />
               </BarChart>
@@ -249,7 +249,7 @@ export function Analytics() {
                       style: { textAnchor: 'middle', fontSize: 11 },
                     }}
                   />
-                  <Tooltip formatter={(value: number) => [typeof value === 'number' ? Number(value).toFixed(1) : value]} />
+                  <Tooltip formatter={(value: number | undefined) => [typeof value === 'number' ? Number(value).toFixed(1) : value ?? '—']} />
                   <Legend />
                   <Bar dataKey="our_stanine" name="Our avg stanine" radius={[4, 4, 0, 0]} fill="var(--color-primary)" />
                   <Bar dataKey="ind_stanine" name="Independent norm" radius={[4, 4, 0, 0]} fill="#4b5563" />
@@ -300,7 +300,7 @@ export function Analytics() {
                     style: { textAnchor: 'middle', fontSize: 11 },
                   }}
                 />
-                <Tooltip formatter={(value: number, name: string) => [name === '% Needs Support' && typeof value === 'number' ? Number(value).toFixed(1) + '%' : value, name]} />
+                <Tooltip formatter={(value: number | undefined, name?: string) => [name === '% Needs Support' && typeof value === 'number' ? Number(value).toFixed(1) + '%' : value ?? '—', name ?? '']} />
                 <Legend />
                 <Bar
                   yAxisId="left"
@@ -383,7 +383,7 @@ export function Analytics() {
                   tick={{ fontSize: 11 }}
                   interval={0}
                 />
-                <Tooltip formatter={(value: number) => [typeof value === 'number' ? Number(value).toFixed(1) : value, 'Avg Score']} />
+                <Tooltip formatter={(value: number | undefined) => [typeof value === 'number' ? Number(value).toFixed(1) : value ?? '—', 'Avg Score']} />
                 <Bar dataKey="average_score" name="Avg Score" radius={[0, 4, 4, 0]} fill="var(--color-primary)" />
               </BarChart>
             </ResponsiveContainer>

@@ -48,13 +48,13 @@ def main():
     parser = argparse.ArgumentParser(description="Fix grade progression issues.")
     parser.add_argument("--apply", action="store_true", help="Actually apply changes (default is dry-run).")
     args = parser.parse_args()
-    
+
     if "DATABASE_URL" not in os.environ:
         print("ERROR: Set DATABASE_URL in .env or environment.")
         sys.exit(1)
-    
+
     conn = get_db_connection()
-    
+
     # Get all enrollments ordered by student and year
     df = pd.read_sql_query(
         """
@@ -65,26 +65,26 @@ def main():
         """,
         conn,
     )
-    
+
     if df.empty:
         print("No enrollments found.")
         conn.close()
         return
-    
+
     # Find progression issues: same grade in consecutive years
     fixes_needed = []
-    
+
     for student_uuid in df['student_uuid'].unique():
         student_enrollments = df[df['student_uuid'] == student_uuid].sort_values('school_year')
         student_name = student_enrollments.iloc[0]['display_name']
-        
+
         prev_grade = None
         prev_year = None
-        
+
         for _, row in student_enrollments.iterrows():
             current_grade = row['grade_level']
             current_year = row['school_year']
-            
+
             if prev_grade and prev_year:
                 # Check if this is a repeat (same grade in consecutive years)
                 if current_grade == prev_grade:
@@ -108,17 +108,17 @@ def main():
                     prev_grade = current_grade
             else:
                 prev_grade = current_grade
-            
+
             prev_year = current_year
-    
+
     if not fixes_needed:
         print("[OK] No grade progression issues found. All students progress normally.")
         conn.close()
         return
-    
+
     print(f"Found {len(fixes_needed)} enrollment(s) with grade progression issues.\n")
     print(f"{'DRY RUN' if not args.apply else 'APPLYING CHANGES'}...\n")
-    
+
     cur = conn.cursor()
     for fix in fixes_needed:
         print(
@@ -126,7 +126,7 @@ def main():
             f"{fix['current_grade']} -> {fix['new_grade']} "
             f"(enrollment_id: {fix['enrollment_id']})"
         )
-        
+
         if args.apply:
             cur.execute(
                 """
@@ -136,13 +136,13 @@ def main():
                 """,
                 (fix['new_grade'], fix['enrollment_id']),
             )
-    
+
     if args.apply:
         conn.commit()
         print(f"\n[OK] Updated {len(fixes_needed)} enrollment(s) to fix grade progression.")
     else:
         print(f"\nDry run complete. Re-run with --apply to make these changes.")
-    
+
     conn.close()
 
 
