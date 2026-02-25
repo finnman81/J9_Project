@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from core.database import add_intervention, get_all_interventions
 from api.serializers import dataframe_to_records
+from core.database import add_intervention, get_all_interventions
 
 router = APIRouter()
 

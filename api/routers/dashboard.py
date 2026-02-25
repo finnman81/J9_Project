@@ -2,31 +2,32 @@
 Dashboard API: reading and math overview data with filters, KPIs, tiers, priority, growth.
 """
 import logging
+
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 
 logger = logging.getLogger(__name__)
 
+from api.serializers import dataframe_to_records
+from core.data_health import compute_data_health
 from core.database import (
-    get_all_students,
-    get_all_enrollments,
-    get_all_scores,
     get_all_assessments,
+    get_all_enrollments,
     get_all_interventions,
-    get_v_support_status,
-    get_v_priority_students,
+    get_all_scores,
+    get_all_students,
     get_v_growth_last_two,
+    get_v_priority_students,
+    get_v_support_status,
 )
+from core.growth_engine import compute_cohort_growth_summary, compute_period_growth
+from core.priority_engine import compute_priority_students, get_top_priority
 from core.tier_engine import (
-    assign_tiers_bulk,
-    TIER_STRATEGIC,
     TIER_INTENSIVE,
+    TIER_STRATEGIC,
+    assign_tiers_bulk,
     is_needs_support,
 )
-from core.priority_engine import compute_priority_students, get_top_priority
-from core.data_health import compute_data_health
-from core.growth_engine import compute_period_growth, compute_cohort_growth_summary
-from api.serializers import dataframe_to_records
 
 router = APIRouter()
 
@@ -114,7 +115,7 @@ def _build_dashboard(
             total = len(ss_df)
             assessed = ss_df["latest_score"].notna().sum()
             needs = ss_df["tier"].isin(["Intensive", "Strategic"]).sum()
-            overdue = (ss_df["days_since_assessment"] > 90).sum() if "days_since_assessment" in ss_df.columns else 0
+            _overdue = (ss_df["days_since_assessment"] > 90).sum() if "days_since_assessment" in ss_df.columns else 0
             need_ss = ss_df[ss_df["tier"].isin(["Intensive", "Strategic"])]
             covered = need_ss["has_active_intervention"].eq(True).sum() if not need_ss.empty else 0
             cov_pct = f"{covered}/{needs} ({covered/needs*100:.0f}%)" if needs else "N/A"

@@ -1,0 +1,17 @@
+[project]
+name = "j9-project"
+version = "0.1.0"
+description = "School Assessment System"
+readme = "README.md"
+requires-python = ">=3.12"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+# E402: module level import not at top — allowed where path/dotenv must run first (api/main, routers, core/database).
+extend-ignore = ["E402"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["F401"]

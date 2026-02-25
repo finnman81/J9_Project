@@ -55,7 +55,7 @@ For migrating existing data, see `scripts/migrate_data.py` and other scripts in 
    - Or set `DATABASE_URL` as an environment variable in your shell
 
 4. **Initialize database schema** (if needed):  
-   Prefer the **migration-first** path so the dashboard and enrollment-based features work. See **[docs/SCHEMA_BOOTSTRAP.md](docs/SCHEMA_BOOTSTRAP.md)** for the full sequence (base schema → enrollment identity → `python run_migration_v3.py` → optional V4 indexes).  
+   Prefer the **migration-first** path so the dashboard and enrollment-based features work. See **[docs/SCHEMA_BOOTSTRAP.md](docs/SCHEMA_BOOTSTRAP.md)** for the full sequence (base schema → enrollment identity → `python scripts/run_migration_v3.py` → optional V4 indexes).  
    For a minimal legacy-only setup you can run:  
    `python -c "from core.database import init_database; init_database()"`
 
@@ -76,7 +76,7 @@ npm run dev
 ```
 The app will open in your browser at `http://localhost:5173`. The frontend automatically proxies `/api` requests to the backend on port 8000.
 
-**Note:** On Windows PowerShell, use `;` instead of `&&` if combining commands (e.g., `cd web; npm run dev`).
+**Note:** On Windows PowerShell, use `;` instead of `&&` if combining commands (e.g., `cd web; npm run dev`). On Windows you can also run `python scripts/start_app.py` to launch both backend and frontend in separate windows.
 
 ### Optional Frontend Configuration
 

@@ -6,7 +6,6 @@ pages, and the priority engine use a single source of truth.
 """
 from typing import Dict, Optional
 
-import numpy as np
 import pandas as pd
 
 from core.benchmarks import classify_growth as _classify_reading_growth

@@ -1,8 +1,9 @@
 """Serialize pandas DataFrames and values for JSON API responses."""
-import pandas as pd
-import numpy as np
 from datetime import date, datetime
 from typing import Any
+
+import numpy as np
+import pandas as pd
 
 
 def serialize_dict(d: dict) -> dict:

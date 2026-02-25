@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 # Project root
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 def main():
@@ -90,7 +90,7 @@ def main():
         print("  • v_priority_students")
         print("  • v_growth_last_two")
         print()
-        print("You can now start the app with: python start_app.py")
+        print("You can now start the app with: python scripts/start_app.py")
 
     except Exception as e:
         print(f"❌ ERROR running migration: {e}")

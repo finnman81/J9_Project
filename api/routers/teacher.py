@@ -3,25 +3,26 @@ Teacher dashboard API: data filtered by teacher and school year.
 Uses v_support_status / v_priority_students when available; fallback to legacy.
 """
 import logging
+
 import pandas as pd
 from fastapi import APIRouter
 
 logger = logging.getLogger(__name__)
 
-from core.database import (
-    get_all_students,
-    get_all_enrollments,
-    get_all_assessments,
-    get_all_scores,
-    get_all_interventions,
-    get_v_support_status,
-    get_v_priority_students,
-    get_v_growth_last_two,
-)
-from core.tier_engine import assign_tiers_bulk, is_needs_support
-from core.priority_engine import compute_priority_students
-from core.growth_engine import compute_period_growth, compute_cohort_growth_summary
 from api.serializers import dataframe_to_records
+from core.database import (
+    get_all_assessments,
+    get_all_enrollments,
+    get_all_interventions,
+    get_all_scores,
+    get_all_students,
+    get_v_growth_last_two,
+    get_v_priority_students,
+    get_v_support_status,
+)
+from core.growth_engine import compute_cohort_growth_summary, compute_period_growth
+from core.priority_engine import compute_priority_students
+from core.tier_engine import assign_tiers_bulk, is_needs_support
 
 router = APIRouter()
 

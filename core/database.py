@@ -3,16 +3,17 @@ Database connection and schema setup for Literacy Assessment System
 Uses PostgreSQL via Supabase (connected with psycopg2)
 """
 import warnings
+
 warnings.filterwarnings('ignore', message='pandas only supports SQLAlchemy')
 
+import os
+from typing import Dict, List, Optional
+
+import numpy as np
+import pandas as pd
 import psycopg2
 import psycopg2.extras
-from psycopg2.extensions import register_adapter, AsIs
-import pandas as pd
-import numpy as np
-from datetime import datetime
-from typing import Optional, List, Dict, Any
-import os
+from psycopg2.extensions import AsIs, register_adapter
 
 # ---------------------------------------------------------------------------
 # Register numpy types so psycopg2 can handle them as query parameters
@@ -64,7 +65,7 @@ def init_database():
 
     LEGACY FALLBACK only. For new and existing deployments use the migration-first
     path: run schema/supabase_schema.sql (or supabase_schema_math.sql), then
-    enrollment identity migrations, then run_migration_v3.py, then schema/migration_v4_perf_indexes.sql.
+    enrollment identity migrations, then scripts/run_migration_v3.py, then schema/migration_v4_perf_indexes.sql.
     See docs/SCHEMA_BOOTSTRAP.md.
     Safe to call repeatedly (IF NOT EXISTS). Use for local Postgres when not using SQL files.
     """

@@ -13,7 +13,7 @@ This document describes the **recommended** way to set up the database schema. U
 3. **Dashboard views (V3)**  
    Run migration V3 to add views and indexes required by the dashboard and API:
    ```bash
-   python run_migration_v3.py
+   python scripts/run_migration_v3.py
    ```
    Or execute `schema/migration_v3_teacher_first.sql` in the SQL Editor. This creates `v_teacher_roster`, `v_support_status`, `v_priority_students`, `v_growth_last_two`, and related indexes.
 

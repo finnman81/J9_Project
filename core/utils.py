@@ -2,15 +2,21 @@
 Utility functions for recalculating literacy and math scores
 """
 import pandas as pd
-from core.database import get_db_connection, get_student_assessments, save_literacy_score, save_math_score
+
 from core.calculations import (
-    calculate_component_scores, calculate_overall_literacy_score,
-    determine_risk_level, calculate_trend
+    calculate_component_scores,
+    calculate_overall_literacy_score,
+    calculate_trend,
+    determine_risk_level,
 )
+from core.database import get_db_connection, get_student_assessments, save_literacy_score, save_math_score
 from core.math_calculations import (
-    calculate_math_component_scores, calculate_overall_math_score,
-    determine_math_risk_level, calculate_math_trend
+    calculate_math_component_scores,
+    calculate_math_trend,
+    calculate_overall_math_score,
+    determine_math_risk_level,
 )
+
 
 def recalculate_literacy_scores(student_id: int = None, school_year: str = None):
     """Recalculate literacy scores for students"""
@@ -117,7 +123,7 @@ def recalculate_math_scores(student_id: int = None, school_year: str = None):
             math_assessments = assessments[assessments['subject_area'] == 'Math']
         else:
             # Fallback: filter by assessment type if subject_area column doesn't exist
-            math_types = ['NIF', 'NNF', 'AQD', 'MNF', 'Math_Computation', 'Math_Concepts_Application', 
+            math_types = ['NIF', 'NNF', 'AQD', 'MNF', 'Math_Computation', 'Math_Concepts_Application',
                          'Computation', 'Concepts_Application', 'Concepts & Application', 'Math_Composite']
             math_assessments = assessments[assessments['assessment_type'].isin(math_types)]
 

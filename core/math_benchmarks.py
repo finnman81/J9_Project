@@ -11,9 +11,9 @@ Benchmark status levels:
   - Below Benchmark    (40-60% likelihood) → Strategic Support
   - Well Below Benchmark (10-20% likelihood) → Intensive Support
 """
-from typing import Optional, Dict, List, Tuple
+from typing import Dict, Optional, Tuple
+
 import pandas as pd
-import numpy as np
 
 # ---------------------------------------------------------------------------
 # Grade-level helpers (same as benchmarks.py)

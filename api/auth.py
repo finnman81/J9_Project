@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 import jwt
-from jwt import PyJWKClient, PyJWKClientError
 from fastapi import Depends, HTTPException, Request
+from jwt import PyJWKClient, PyJWKClientError
 
 logger = logging.getLogger(__name__)
 

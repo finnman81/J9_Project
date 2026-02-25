@@ -1,9 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 
-from core.database import add_assessment, get_student_id
-from core.calculations import process_assessment_score
-from core.math_calculations import process_math_assessment_score
+from core.database import add_assessment
 from core.utils import recalculate_literacy_scores, recalculate_math_scores
 
 router = APIRouter()

@@ -10,9 +10,9 @@ Benchmark status levels:
   - Below Benchmark    (40-60% likelihood) → Strategic Support
   - Well Below Benchmark (10-20% likelihood) → Intensive Support
 """
-from typing import Optional, Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
+
 import pandas as pd
-import numpy as np
 
 # ---------------------------------------------------------------------------
 # Grade-level helpers
@@ -284,18 +284,18 @@ def blend_dashboard_tiers(literacy_tier: str, erb_tier: str) -> str:
           - ERB Strategic/Intensive → at most Strategic (do not jump to Intensive)
       - If literacy is Unknown → fall back to ERB tier.
     """
-    l = (literacy_tier or 'Unknown').strip()
+    lit = (literacy_tier or 'Unknown').strip()
     e = (erb_tier or 'Unknown').strip()
 
-    if l == 'Intensive (Tier 3)':
+    if lit == 'Intensive (Tier 3)':
         return 'Intensive (Tier 3)'
 
-    if l == 'Strategic (Tier 2)':
+    if lit == 'Strategic (Tier 2)':
         if e == 'Intensive (Tier 3)':
             return 'Intensive (Tier 3)'
         return 'Strategic (Tier 2)'
 
-    if l == 'Core (Tier 1)':
+    if lit == 'Core (Tier 1)':
         if e in ('Core (Tier 1)', 'Unknown', 'N/A', ''):
             return 'Core (Tier 1)'
         # ERB indicates some concern: nudge to Strategic but not Intensive.

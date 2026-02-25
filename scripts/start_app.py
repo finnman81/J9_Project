@@ -10,7 +10,7 @@ import socket
 from pathlib import Path
 
 # Get project root directory
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 def find_available_port(start_port=8000, max_attempts=10):
     """Find an available port starting from start_port, trying up to max_attempts ports."""
@@ -77,7 +77,7 @@ def main():
         print("   The dashboard requires migration_v3 to be run first.")
         print("   Run this command to apply the migration:")
         print()
-        print("   python run_migration_v3.py")
+        print("   python scripts/run_migration_v3.py")
         print()
         response = input("   Continue anyway? (y/n): ").strip().lower()
         if response != 'y':

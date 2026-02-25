@@ -21,12 +21,12 @@ try:
 except ImportError:
     pass
 
-from fastapi import Depends, FastAPI, Request, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.auth import get_current_user
-from api.routers import students, assessments, interventions, dashboard, teacher, metrics
+from api.routers import assessments, dashboard, interventions, metrics, students, teacher
 
 logger = logging.getLogger(__name__)
 

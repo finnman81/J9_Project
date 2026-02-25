@@ -7,7 +7,7 @@ import sys
 import os
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 try:
@@ -146,7 +146,7 @@ def main():
                 print(f"   ✗ ERROR querying view: {e}")
         else:
             print("🧪 v_support_status view does not exist")
-            print("   Run: python run_migration_v3.py")
+            print("   Run: python scripts/run_migration_v3.py")
 
         print()
 
@@ -178,7 +178,7 @@ def main():
         print("Summary:")
         print("=" * 70)
         print()
-        print("If views are missing: Run 'python run_migration_v3.py'")
+        print("If views are missing: Run 'python scripts/run_migration_v3.py'")
         print("If student_enrollments is empty: Create enrollments for your students")
         print("If benchmark_thresholds is empty: Run threshold setup scripts")
         print()

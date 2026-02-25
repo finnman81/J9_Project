@@ -11,7 +11,8 @@ Score Types
 - Scale Score: cross-form / cross-level comparable score
 - Growth Percentile (1-99): academic progress relative to peers
 """
-from typing import Optional, Dict, List, Tuple
+from typing import Dict, List, Optional
+
 import pandas as pd
 
 # ---------------------------------------------------------------------------

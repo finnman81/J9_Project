@@ -1,10 +1,10 @@
 """
 Literacy score calculation algorithms
 """
-import pandas as pd
-import numpy as np
-from typing import Dict, Optional, Tuple
 import re
+from typing import Dict, Optional, Tuple
+
+import pandas as pd
 
 # Reading level to numeric mapping (A-Z scale)
 READING_LEVEL_MAP = {

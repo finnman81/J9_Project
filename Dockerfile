@@ -26,6 +26,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 EXPOSE 8080
 
+# Allow orchestrators to probe /health (e.g. Docker, Kubernetes, App Runner).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD sh -c 'python -c "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:${PORT:-8080}/health\", timeout=5)"' || exit 1
+
 USER app
 
 CMD ["sh", "-c", "gunicorn api.main:app --worker-class uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:${PORT:-8080} --timeout 120 --keep-alive 5 --access-logfile - --error-logfile -"]

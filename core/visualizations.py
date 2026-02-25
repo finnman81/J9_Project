@@ -1,10 +1,10 @@
 """
 Visualization functions for literacy assessment dashboard
 """
-import plotly.graph_objects as go
-import plotly.express as px
+
 import pandas as pd
-from typing import Optional
+import plotly.graph_objects as go
+
 
 def create_risk_distribution_chart(df: pd.DataFrame, grade_filter: str = None) -> go.Figure:
     """Create pie chart showing risk level distribution"""
@@ -96,8 +96,8 @@ def create_student_progress_chart(student_assessments: pd.DataFrame) -> go.Figur
     """Create line chart showing individual student progress"""
     period_order = ['Fall', 'Winter', 'Spring', 'EOY']
     student_assessments['assessment_period'] = pd.Categorical(
-        student_assessments['assessment_period'], 
-        categories=period_order, 
+        student_assessments['assessment_period'],
+        categories=period_order,
         ordered=True
     )
 
@@ -115,7 +115,7 @@ def create_student_progress_chart(student_assessments: pd.DataFrame) -> go.Figur
     ))
 
     # Add benchmark line at 70
-    fig.add_hline(y=70, line_dash="dash", line_color="green", 
+    fig.add_hline(y=70, line_dash="dash", line_color="green",
                   annotation_text="Benchmark (70)", annotation_position="right")
 
     fig.update_layout(

@@ -19,9 +19,9 @@ The target is a **production-ready, multi-tenant SaaS** that can onboard and sca
 - Enrollment-based data model (`students_core` + `student_enrollments`) already supports per-school scoping.
 
 ### Gaps before multi-school SaaS launch
-- No containerization yet (no Dockerfile / `.dockerignore`).
+- **Containerization:** A `Dockerfile` and `.dockerignore` exist at the repo root. The API is run via Gunicorn binding to `PORT` (default 8080). See [DEPLOY.md](DEPLOY.md) for build/run instructions.
+- **Auth:** JWT authentication (Clerk) is implemented: `api/auth.py` provides `get_current_user` and all `/api` routes require a valid Clerk JWT in production. `CLERK_JWT_ISSUER` is required when `APP_ENV=production`. Public endpoints (e.g. `/health`) remain unauthenticated.
 - No CI/CD deployment workflows.
-- No authentication/authorization enforcement in API routes.
 - No tenant isolation strategy (row-level security or schema-per-tenant).
 - No managed secrets strategy documented for hosted environments.
 - No production observability (metrics/tracing/alerts) setup.
@@ -93,7 +93,7 @@ Why this is best for this project in 2026:
 ## Practical rollout plan
 
 ### Phase 0 — hardening (1-2 sprints)
-- Add `Dockerfile` and `.dockerignore` for API service (`uvicorn api.main:app --host 0.0.0.0 --port 8080`).
+- `Dockerfile` and `.dockerignore` exist; API runs via Gunicorn with `PORT` support. Use them in CI/CD (build image, push to registry).
 - Add request timeouts and uvicorn worker tuning for production.
 - Lock CORS to actual domains only.
 - Add basic CI/CD pipeline (GitHub Actions): lint, test, build container, push to ECR.

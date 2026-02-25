@@ -11,7 +11,7 @@ Priority scoring factors (weighted sum, higher = more urgent):
   4. Stale assessment: +2 if >90 days, +1 if >60 days
   5. No growth data: +1 if trend is Unknown / insufficient data
 """
-from datetime import datetime, date
+from datetime import date, datetime
 from typing import List, Optional
 
 import numpy as np

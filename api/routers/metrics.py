@@ -4,20 +4,21 @@ Uses SQL views v_support_status, v_priority_students, v_growth_last_two.
 """
 import logging
 import time
+
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 
 logger = logging.getLogger(__name__)
 
+from api.serializers import dataframe_to_records
 from core.database import (
-    get_v_support_status,
-    get_v_priority_students,
-    get_v_growth_last_two,
     get_benchmark_thresholds,
     get_db_connection,
+    get_v_growth_last_two,
+    get_v_priority_students,
+    get_v_support_status,
 )
-from core.erb_scoring import ERB_SUBTESTS, ERB_SUBTEST_LABELS, parse_erb_score_value, get_erb_independent_norm
-from api.serializers import dataframe_to_records
+from core.erb_scoring import ERB_SUBTEST_LABELS, ERB_SUBTESTS, get_erb_independent_norm, parse_erb_score_value
 
 router = APIRouter()
 
@@ -190,7 +191,7 @@ def get_teacher_kpis(
         )
         logger.info("metrics/teacher-kpis %.3fs", time.perf_counter() - t0)
         return out
-    except Exception as e:
+    except Exception:
         logger.exception("get_teacher_kpis failed")
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -271,7 +272,7 @@ def get_priority_students(
             "flagged_strategic": int(strategic),
             "total_flagged": len(flagged),
         }
-    except Exception as e:
+    except Exception:
         logger.exception("get_priority_students failed")
         raise HTTPException(status_code=500, detail="Internal server error")
 

@@ -2,9 +2,9 @@
 Math score calculation algorithms
 Similar structure to calculations.py for literacy
 """
-import pandas as pd
-import numpy as np
 from typing import Dict, Optional, Tuple
+
+import pandas as pd
 
 # Component weights for overall math score
 # These weights can be adjusted based on teacher input

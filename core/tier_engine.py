@@ -10,19 +10,17 @@ Tier levels (canonical strings used everywhere):
   - 'Intensive (Tier 3)'
   - 'Unknown'
 """
-from typing import Optional, Dict, List
-import pandas as pd
+from typing import Dict, List, Optional
+
 import numpy as np
+import pandas as pd
 
 from core.benchmarks import (
-    get_support_level,
     blend_dashboard_tiers,
 )
-from core.math_benchmarks import get_math_support_level
 from core.erb_scoring import (
-    summarize_erb_scores,
     get_latest_erb_tier,
-    erb_stanine_to_tier,
+    summarize_erb_scores,
 )
 
 # ---------------------------------------------------------------------------
