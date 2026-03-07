@@ -27,5 +27,4 @@ export const peckTheme: Theme = {
     fontBody: '"Source Sans 3", "Source Sans Pro", system-ui, sans-serif',
   },
   radius: '6px',
-  sidebarPattern: 'peck-pattern',
 }
