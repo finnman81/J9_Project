@@ -23,34 +23,28 @@ export function RiskBadge({ risk, tier, showNotAssessed, className = '' }: RiskB
   const isMissing = !raw || raw === 'Unknown'
   const label = showNotAssessed && isMissing ? 'Not assessed' : raw || '—'
   const key = STATUS_KEY[tier || risk || (showNotAssessed && isMissing ? 'Not assessed' : '')] ?? 'unknown'
-  
-  // Custom colors: soft green for tier badges
-  const getColors = () => {
-    if (key === 'core' || key === 'strategic' || key === 'intensive') {
-      return {
-        backgroundColor: '#E6F2EC', // Soft green background
-        color: '#1E6B43', // Darker green text
-      }
-    }
-    // Fallback to CSS variables for unknown
-    return {
-      backgroundColor: `var(--color-status-${key}-bg)`,
-      color: `var(--color-status-${key}-text)`,
-    }
+  const colors = {
+    backgroundColor: `var(--color-status-${key}-bg)`,
+    borderColor: `var(--color-status-${key}-border)`,
+    color: `var(--color-status-${key}-text)`,
   }
-  
-  const colors = getColors()
   
   return (
     <span
-      className={`inline-flex items-center font-medium rounded-[var(--button-radius)] ${className}`}
+      className={`inline-flex items-center gap-2 rounded-full border font-medium ${className}`}
       style={{
         backgroundColor: colors.backgroundColor,
+        borderColor: colors.borderColor,
         color: colors.color,
         fontSize: 'var(--chip-text-size)',
-        padding: 'var(--chip-padding)',
+        padding: '6px 12px',
       }}
     >
+      <span
+        aria-hidden="true"
+        className="h-2 w-2 rounded-full"
+        style={{ backgroundColor: colors.color }}
+      />
       {label}
     </span>
   )

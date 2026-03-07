@@ -580,9 +580,9 @@ export function StudentDetail() {
                     <XAxis dataKey="period" tick={{ fontSize: 12, fill: '#475569' }} />
                     <YAxis domain={yAxisDomain} tick={{ fontSize: 12, fill: '#475569' }} />
                     <Tooltip
-                      formatter={(value: number, _name: string, props: { payload?: { assessment_type?: string } }) => {
-                        const type = props.payload?.assessment_type
-                        const formatted = typeof value === 'number' ? Number(value).toFixed(1) : value
+                      formatter={(value: number | string | undefined, _name?: string, props?: { payload?: { assessment_type?: string } }) => {
+                        const type = props?.payload?.assessment_type
+                        const formatted = typeof value === 'number' ? Number(value).toFixed(1) : value ?? 'N/A'
                         return type ? [`${formatted} (${type})`, 'Score'] : [formatted, 'Score']
                       }}
                     />

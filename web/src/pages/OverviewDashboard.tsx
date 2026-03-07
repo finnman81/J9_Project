@@ -1,37 +1,40 @@
-import { useEffect, useState, useMemo } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import {
+  Bar,
+  BarChart,
+  Cell,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import {
   api,
-  type MetricsParams,
-  type TeacherKpisResponse,
-  type PriorityStudentsResponse,
-  type GrowthMetricsResponse,
   type DistributionResponse,
+  type GrowthMetricsResponse,
+  type MetricsParams,
+  type PriorityStudentsResponse,
+  type TeacherKpisResponse,
 } from '../api/client'
 import { RiskBadge } from '../components/RiskBadge'
 import { TrendChip } from '../components/TrendChip'
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-  Cell,
-} from 'recharts'
 
 const SECTION_GAP = 'var(--section-gap)'
-
-/** Grade order for charts and lists: Kindergarten → Eighth */
 const GRADE_ORDER = ['Kindergarten', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth']
+const PRIORITY_FILTER_LABEL: Record<Exclude<KpiFilter, null>, string> = {
+  overdue: 'Only overdue students',
+  declining: 'Only declining trends',
+  no_intervention: 'Only support-gap students',
+}
+
+type KpiFilter = 'overdue' | 'declining' | 'no_intervention' | null
 
 function sortByGrade<T extends { grade_level: string }>(rows: T[]): T[] {
   const order = new Map(GRADE_ORDER.map((g, i) => [g, i]))
   return [...rows].sort((a, b) => (order.get(a.grade_level) ?? 99) - (order.get(b.grade_level) ?? 99))
 }
-
-type KpiFilter = 'overdue' | 'declining' | 'no_intervention' | null
 
 function tierToDisplayTier(tier: string): string {
   if (tier === 'Core') return 'Core (Tier 1)'
@@ -40,11 +43,153 @@ function tierToDisplayTier(tier: string): string {
   return tier || 'Unknown'
 }
 
+function formatPct(value: number | null | undefined) {
+  return `${Number(value ?? 0).toFixed(1)}%`
+}
+
+function formatValue(value: number | null | undefined, digits = 0) {
+  if (value == null) return 'N/A'
+  return Number(value).toFixed(digits)
+}
+
+function supportStatusTone(status?: string | null) {
+  if (status === 'Needs Support') return { backgroundColor: '#FFF3E4', color: '#A8570C', borderColor: '#FFD6AE' }
+  if (status === 'Monitor') return { backgroundColor: '#EAF1FF', color: '#295BA7', borderColor: '#C7D8FF' }
+  if (status === 'On Track') return { backgroundColor: '#E8F7EE', color: '#17663D', borderColor: '#C8E8D4' }
+  return { backgroundColor: '#F5F7FB', color: '#62748D', borderColor: '#D9E2EC' }
+}
+
+function SectionCard({
+  title,
+  subtitle,
+  actions,
+  children,
+  className = '',
+}: {
+  title: string
+  subtitle?: string
+  actions?: ReactNode
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <section
+      className={`rounded-[28px] border bg-white ${className}`}
+      style={{
+        borderColor: 'rgba(201, 215, 232, 0.9)',
+        boxShadow: 'var(--card-shadow)',
+      }}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: 'rgba(217, 226, 236, 0.9)' }}>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-muted)' }}>
+            Analytics block
+          </p>
+          <h2 className="mt-2 text-[1.2rem] font-semibold leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+            {title}
+          </h2>
+          {subtitle && (
+            <p className="mt-1.5 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+              {subtitle}
+            </p>
+          )}
+        </div>
+        {actions}
+      </div>
+      <div className="p-6">{children}</div>
+    </section>
+  )
+}
+
+function KpiCard({
+  label,
+  value,
+  helper,
+  accent,
+  active = false,
+  onClick,
+}: {
+  label: string
+  value: string
+  helper: string
+  accent: string
+  active?: boolean
+  onClick?: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group rounded-[24px] border p-5 text-left"
+      style={{
+        borderColor: active ? accent : 'rgba(201, 215, 232, 0.9)',
+        background: active ? `linear-gradient(180deg, ${accent}12, #ffffff)` : 'linear-gradient(180deg, #fbfdff, #ffffff)',
+        boxShadow: active ? '0 14px 28px rgba(41, 91, 167, 0.12)' : 'none',
+      }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+            {label}
+          </p>
+          <p className="mt-3 text-[2rem] font-semibold leading-none" style={{ color: 'var(--color-text-primary)' }}>
+            {value}
+          </p>
+          <p className="mt-3 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+            {helper}
+          </p>
+        </div>
+        <span
+          className="h-11 w-11 rounded-2xl"
+          style={{
+            background: `linear-gradient(135deg, ${accent}20, ${accent}08)`,
+            border: `1px solid ${accent}32`,
+          }}
+        />
+      </div>
+    </button>
+  )
+}
+
+function ProgressRow({
+  label,
+  value,
+  color,
+}: {
+  label: string
+  value: number
+  color: string
+}) {
+  const safeValue = Math.max(0, Math.min(100, value))
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span style={{ color: 'var(--color-text-secondary)' }}>{label}</span>
+        <span className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          {formatPct(safeValue)}
+        </span>
+      </div>
+      <div className="mt-2 h-2 rounded-full" style={{ backgroundColor: '#E8EEF6' }}>
+        <div
+          className="h-2 rounded-full"
+          style={{
+            width: `${safeValue}%`,
+            background: `linear-gradient(90deg, ${color}, ${color}aa)`,
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
 export function OverviewDashboard() {
   const { subject } = useParams<{ subject: string }>()
   const navigate = useNavigate()
   const isMath = subject?.toLowerCase() === 'math'
+  const subjectKey = subject ?? 'reading'
   const subjectParam = isMath ? 'Math' : 'Reading'
+  const subjectLabel = isMath ? 'Math' : 'Literacy'
 
   const [filter, setFilter] = useState<{ grade_level?: string; class_name?: string; teacher_name?: string; school_year?: string }>({})
   const [filters, setFilters] = useState<{ grade_levels: string[]; classes: string[]; teachers: string[]; school_years: string[] } | null>(null)
@@ -65,13 +210,11 @@ export function OverviewDashboard() {
     const schoolYear = selectedYear
     return {
       teacher_name: filter.teacher_name === 'All' || !filter.teacher_name ? undefined : filter.teacher_name,
-      // When no specific year is selected, omit school_year so metrics aggregate across years.
       school_year: schoolYear,
       subject: subjectParam,
       grade_level: filter.grade_level === 'All' || !filter.grade_level ? undefined : filter.grade_level,
       class_name: filter.class_name === 'All' || !filter.class_name ? undefined : filter.class_name,
       current_period: 'Fall',
-      // For "This window" KPI, still use a concrete current_school_year even when aggregating.
       current_school_year: schoolYear ?? defaultYear ?? '2024-25',
     }
   }, [filter, subjectParam, filters?.school_years])
@@ -94,17 +237,22 @@ export function OverviewDashboard() {
         api.getGrowthMetrics(metricsParams, { signal }).catch(() => null),
         api.getDistribution(metricsParams, { signal }).catch(() => null),
       ])
+
       if (signal.aborted) return
+
       setKpis(k ?? null)
       setPriority(p ?? null)
       setGrowth(g ?? null)
       setDistribution(d ?? null)
       setLastSynced(new Date())
+
       if (!k && !p) {
         setError('Metrics unavailable. Run migration_v3 and ensure student_enrollments exist.')
       }
+
       setLoading(false)
     }
+
     run().catch((err) => {
       if (err?.name === 'AbortError' || signal.aborted) return
       setError(err?.message ?? String(err))
@@ -114,490 +262,851 @@ export function OverviewDashboard() {
       setDistribution(null)
       setLoading(false)
     })
+
     return () => ac.abort()
   }, [metricsParams])
 
-  const resetFilters = () => setFilter({})
+  const resetFilters = () => {
+    setFilter({})
+    setKpiFilter(null)
+    setSearchStudent('')
+  }
+
+  const defaultSchoolYear = useMemo(
+    () => filters?.school_years?.find((year) => year && year !== 'All') ?? '2024-25',
+    [filters?.school_years],
+  )
 
   const filterSummary = useMemo(() => {
-    const g = !filter.grade_level || filter.grade_level === 'All' ? 'All Grades' : filter.grade_level
-    const c = !filter.class_name || filter.class_name === 'All' ? 'All Classes' : filter.class_name
-    const t = !filter.teacher_name || filter.teacher_name === 'All' ? 'All Teachers' : filter.teacher_name
-    const y = !filter.school_year || filter.school_year === 'All' ? (filters?.school_years?.[0] ?? '2024–25') : filter.school_year
-    return `${g} • ${c} • ${t} • ${y}`
-  }, [filter, filters])
+    const grade = !filter.grade_level || filter.grade_level === 'All' ? 'All grades' : filter.grade_level
+    const className = !filter.class_name || filter.class_name === 'All' ? 'All classes' : filter.class_name
+    const teacher = !filter.teacher_name || filter.teacher_name === 'All' ? 'All teachers' : filter.teacher_name
+    const schoolYear = !filter.school_year || filter.school_year === 'All' ? defaultSchoolYear : filter.school_year
+    return `${grade} / ${className} / ${teacher} / ${schoolYear}`
+  }, [defaultSchoolYear, filter])
+
+  const gradeOptions = useMemo(
+    () =>
+      [...(filters?.grade_levels ?? [])]
+        .filter((grade) => grade && grade !== 'All')
+        .sort((a, b) => (GRADE_ORDER.indexOf(a) === -1 ? 99 : GRADE_ORDER.indexOf(a)) - (GRADE_ORDER.indexOf(b) === -1 ? 99 : GRADE_ORDER.indexOf(b))),
+    [filters?.grade_levels],
+  )
+  const classOptions = useMemo(() => (filters?.classes ?? []).filter((value) => value && value !== 'All'), [filters?.classes])
+  const teacherOptions = useMemo(() => (filters?.teachers ?? []).filter((value) => value && value !== 'All'), [filters?.teachers])
+  const schoolYearOptions = useMemo(() => (filters?.school_years ?? []).filter((value) => value && value !== 'All'), [filters?.school_years])
 
   const priorityRows = useMemo(() => {
     if (!priority?.rows) return []
+
     let list = [...priority.rows]
+
     if (searchStudent.trim()) {
-      const q = searchStudent.trim().toLowerCase()
-      list = list.filter((r) => r.display_name?.toLowerCase().includes(q))
+      const query = searchStudent.trim().toLowerCase()
+      list = list.filter((row) => row.display_name?.toLowerCase().includes(query))
     }
-    if (kpiFilter === 'overdue') list = list.filter((r) => (r.days_since_assessment ?? 0) > 90)
-    if (kpiFilter === 'declining') list = list.filter((r) => r.trend === 'Declining')
-    if (kpiFilter === 'no_intervention') list = list.filter((r) => !r.has_active_intervention && (r.tier === 'Intensive' || r.tier === 'Strategic'))
+
+    if (kpiFilter === 'overdue') list = list.filter((row) => (row.days_since_assessment ?? 0) > 90)
+    if (kpiFilter === 'declining') list = list.filter((row) => row.trend === 'Declining')
+    if (kpiFilter === 'no_intervention') {
+      list = list.filter((row) => !row.has_active_intervention && (row.tier === 'Intensive' || row.tier === 'Strategic'))
+    }
+
     return list
-  }, [priority, searchStudent, kpiFilter])
+  }, [kpiFilter, priority, searchStudent])
 
   const histogramData = useMemo(() => {
     if (!distribution?.bins?.length) return []
-    return distribution.bins.map((b) => ({
-      range: `${b.bin_min}-${b.bin_max}`,
-      count: b.count,
-      pct: b.pct ?? 0,
-      bin_min: b.bin_min,
-      bin_max: b.bin_max,
+    return distribution.bins.map((bin) => ({
+      range: `${bin.bin_min}-${bin.bin_max}`,
+      count: bin.count,
+      pct: bin.pct ?? 0,
+      bin_min: bin.bin_min,
+      bin_max: bin.bin_max,
     }))
   }, [distribution])
 
   const distributionYMax = useMemo(() => {
     if (!histogramData.length) return 50
-    const maxCount = Math.max(...histogramData.map((d) => d.count))
+    const maxCount = Math.max(...histogramData.map((row) => row.count))
     return Math.ceil(Math.max(maxCount * 1.15, 10))
   }, [histogramData])
 
+  const total = kpis?.total_students ?? 0
+  const assessed = kpis?.assessed_students ?? 0
+  const supportGapCount = kpis?.support_gap_count ?? 0
+  const needsSupportCount = kpis?.needs_support_count ?? 0
+  const activePriorityLabel = kpiFilter ? PRIORITY_FILTER_LABEL[kpiFilter] : 'All flagged students'
+  const executiveSummary =
+    supportGapCount > 0
+      ? `${supportGapCount} students need intervention follow-through, while ${formatPct(kpis?.assessed_this_window_pct)} are current in this benchmark window.`
+      : `${formatPct(kpis?.assessed_this_window_pct)} of students are current in this benchmark window, and intervention coverage is ${formatPct(kpis?.intervention_coverage_pct)}.`
+
   const exportCsv = () => {
     if (!priorityRows.length) return
+
     const cols = ['display_name', 'grade_level', 'class_name', 'support_status', 'tier', 'has_active_intervention', 'days_since_assessment', 'trend', 'priority_score', 'reasons']
     const header = cols.join(',')
-    const rows = priorityRows.map((r) =>
-      cols.map((c) => {
-        const v = (r as Record<string, unknown>)[c]
-        const str = v == null ? '' : String(v)
-        return str.includes(',') ? `"${str.replace(/"/g, '""')}"` : str
-      }).join(',')
+    const rows = priorityRows.map((row) =>
+      cols
+        .map((col) => {
+          const value = (row as unknown as Record<string, unknown>)[col]
+          const normalized = value == null ? '' : String(value)
+          return normalized.includes(',') ? `"${normalized.replace(/"/g, '""')}"` : normalized
+        })
+        .join(','),
     )
     const blob = new Blob([header + '\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `${isMath ? 'Math' : 'Literacy'}-priority-${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(a.href)
+    const anchor = document.createElement('a')
+    anchor.href = URL.createObjectURL(blob)
+    anchor.download = `${subjectLabel.toLowerCase()}-priority-${new Date().toISOString().slice(0, 10)}.csv`
+    anchor.click()
+    URL.revokeObjectURL(anchor.href)
   }
-
-  const title = isMath ? 'Math Dashboard' : 'Literacy Dashboard'
 
   if (loading && !kpis && !priority) {
     return (
-      <div className="flex items-center justify-center py-16 text-[var(--label-size)] text-[var(--color-text)] opacity-70">
-        Loading...
+      <div className="flex items-center justify-center py-20 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+        Loading dashboard...
       </div>
     )
   }
+
   if (error && !kpis && !priority) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-5 text-red-800 max-w-xl">
-        <p className="font-semibold" style={{ fontSize: 'var(--section-title-size)' }}>Failed to load dashboard.</p>
-        <p className="mt-2 text-[var(--label-size)]">{error}</p>
-        <p className="mt-3 text-sm text-red-600">
-          Ensure API is running: <code className="bg-red-100 px-1 rounded">uvicorn api.main:app --reload --port 8000</code>
+      <div className="max-w-xl rounded-[24px] border bg-[#FFF5F5] p-6" style={{ borderColor: '#F7C5D1', color: '#8A1C38' }}>
+        <p className="text-lg font-semibold">Failed to load dashboard.</p>
+        <p className="mt-2 text-sm">{error}</p>
+        <p className="mt-3 text-sm">
+          Ensure the API is running: <code className="rounded bg-white px-1.5 py-0.5">uvicorn api.main:app --reload --port 8000</code>
         </p>
       </div>
     )
   }
 
-  const total = kpis?.total_students ?? 0
-  const assessed = kpis?.assessed_students ?? 0
-
   return (
     <div className="mx-auto" style={{ maxWidth: 'var(--content-max-width)' }}>
-      <header className="flex flex-wrap items-start justify-between gap-6" style={{ marginBottom: SECTION_GAP }}>
-        <div className="min-w-0">
-          <h1 className="text-left" style={{ fontSize: '1.75rem', fontWeight: 700, lineHeight: 1.25, fontFamily: 'var(--font-family)', color: '#1F2937' }}>
-            {title}
-          </h1>
-          <p className="mt-2" style={{ fontSize: 'var(--context-line-size)', fontWeight: 'var(--context-line-weight)', color: '#64748B' }}>{filterSummary}</p>
+      <section
+        className="grid gap-5 xl:grid-cols-[1.45fr_0.95fr]"
+        style={{ marginBottom: SECTION_GAP }}
+      >
+        <div
+          className="rounded-[32px] border p-6 md:p-7"
+          style={{
+            borderColor: 'rgba(201, 215, 232, 0.9)',
+            background:
+              'linear-gradient(135deg, rgba(234, 241, 255, 0.95) 0%, rgba(255, 255, 255, 0.98) 48%, rgba(245, 248, 255, 0.96) 100%)',
+            boxShadow: '0 24px 56px rgba(20, 33, 61, 0.08)',
+          }}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-6">
+            <div className="max-w-3xl">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--color-brand-primary)' }}>
+                {subjectLabel} performance intelligence
+              </p>
+              <h1
+                className="mt-4 text-[2rem] font-semibold leading-tight md:text-[2.5rem]"
+                style={{ fontFamily: 'var(--font-family)', color: 'var(--color-text-primary)' }}
+              >
+                A lighter SIS experience for campus leaders, interventionists, and classroom teams.
+              </h1>
+              <p className="mt-4 max-w-2xl text-base leading-7" style={{ color: 'var(--color-text-secondary)' }}>
+                {executiveSummary}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={exportCsv}
+                className="rounded-full border px-4 py-2.5 text-sm font-semibold"
+                style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-primary)', backgroundColor: 'rgba(255, 255, 255, 0.88)' }}
+              >
+                Export roster
+              </button>
+              <Link
+                to={`/app/${subjectKey}/grade-entry`}
+                className="rounded-full px-4 py-2.5 text-sm font-semibold text-white"
+                style={{ background: 'linear-gradient(135deg, var(--color-brand-primary), #5d82d8)' }}
+              >
+                Add assessment
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-8 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="rounded-[24px] border bg-white/80 p-5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                  Students in scope
+                </p>
+                <p className="mt-3 text-[2rem] font-semibold leading-none" style={{ color: 'var(--color-text-primary)' }}>
+                  {total}
+                </p>
+                <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                  Current {subjectLabel.toLowerCase()} roster in selected context
+                </p>
+              </div>
+              <div className="rounded-[24px] border bg-white/80 p-5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                  Assessed coverage
+                </p>
+                <p className="mt-3 text-[2rem] font-semibold leading-none" style={{ color: 'var(--color-text-primary)' }}>
+                  {formatPct(kpis?.assessed_pct)}
+                </p>
+                <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                  {assessed} of {total} students have assessment history
+                </p>
+              </div>
+              <div className="rounded-[24px] border bg-white/80 p-5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                  Support gap
+                </p>
+                <p className="mt-3 text-[2rem] font-semibold leading-none" style={{ color: 'var(--color-text-primary)' }}>
+                  {supportGapCount}
+                </p>
+                <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                  Students flagged without an active intervention
+                </p>
+              </div>
+            </div>
+
+            <div
+              className="rounded-[28px] border p-5"
+              style={{
+                borderColor: 'rgba(201, 215, 232, 0.8)',
+                background: 'linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(242, 246, 255, 0.9))',
+              }}
+            >
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-muted)' }}>
+                Model + UX direction
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {['PowerSchool data model', 'Schoolzilla workflows', 'Light visual polish'].map((pill) => (
+                  <span
+                    key={pill}
+                    className="rounded-full px-3 py-1.5 text-xs font-semibold"
+                    style={{ backgroundColor: 'var(--color-brand-primary-soft)', color: 'var(--color-brand-primary)' }}
+                  >
+                    {pill}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-5 space-y-4">
+                <div className="rounded-[22px] border bg-white px-4 py-3.5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                    Filter summary
+                  </p>
+                  <p className="mt-1.5 text-sm leading-6" style={{ color: 'var(--color-text-muted)' }}>
+                    {filterSummary}
+                  </p>
+                </div>
+                <div className="rounded-[22px] border bg-white px-4 py-3.5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                    Last sync
+                  </p>
+                  <p className="mt-1.5 text-sm leading-6" style={{ color: 'var(--color-text-muted)' }}>
+                    {lastSynced ? lastSynced.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Pending'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-4 flex-shrink-0">
-          {lastSynced && (
-            <span style={{ fontSize: 'var(--muted-helper-size)', color: '#64748B' }}>
-              Last synced: {lastSynced.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={exportCsv}
-            className="px-3 py-2 rounded-[var(--radius-button)] border transition-colors"
-            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text)', fontSize: 'var(--button-text-size)', fontWeight: 'var(--button-text-weight)' }}
-          >
-            Export
-          </button>
-          <Link
-            to={`/app/${subject}/grade-entry`}
-            className="px-3 py-2 rounded-[var(--radius-button)] text-white transition-opacity hover:opacity-90"
-            style={{ backgroundColor: '#1E3A5F', fontSize: 'var(--button-text-size)', fontWeight: 600, boxShadow: '0 1px 3px rgba(30, 58, 95, 0.25)' }}
-          >
-            Add assessment
-          </Link>
-        </div>
-      </header>
+
+        <SectionCard
+          title="Operational signals"
+          subtitle="Quick decisions that mirror student support workflows."
+          actions={
+            <button
+              type="button"
+              onClick={() => setKpiFilter(null)}
+              className="rounded-full border px-3 py-2 text-sm font-semibold"
+              style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)', backgroundColor: 'white' }}
+            >
+              Clear focus
+            </button>
+          }
+        >
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={() => setKpiFilter('no_intervention')}
+              className="w-full rounded-[24px] border p-4 text-left"
+              style={{
+                borderColor: kpiFilter === 'no_intervention' ? '#F3B455' : 'rgba(201, 215, 232, 0.9)',
+                backgroundColor: kpiFilter === 'no_intervention' ? '#FFF7EC' : '#FBFDFF',
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                    Intervention follow-through
+                  </p>
+                  <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                    Students needing support with no active intervention plan.
+                  </p>
+                </div>
+                <span className="text-[1.65rem] font-semibold leading-none" style={{ color: '#A8570C' }}>
+                  {supportGapCount}
+                </span>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setKpiFilter('declining')}
+              className="w-full rounded-[24px] border p-4 text-left"
+              style={{
+                borderColor: kpiFilter === 'declining' ? '#B23754' : 'rgba(201, 215, 232, 0.9)',
+                backgroundColor: kpiFilter === 'declining' ? '#FFF3F6' : '#FBFDFF',
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                    Growth watchlist
+                  </p>
+                  <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                    Students with declining trends since the last assessment window.
+                  </p>
+                </div>
+                <span className="text-[1.65rem] font-semibold leading-none" style={{ color: '#B23754' }}>
+                  {formatPct(growth?.pct_declining)}
+                </span>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setKpiFilter('overdue')}
+              className="w-full rounded-[24px] border p-4 text-left"
+              style={{
+                borderColor: kpiFilter === 'overdue' ? '#295BA7' : 'rgba(201, 215, 232, 0.9)',
+                backgroundColor: kpiFilter === 'overdue' ? '#EFF5FF' : '#FBFDFF',
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                    Assessment freshness
+                  </p>
+                  <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                    Median days since assessment plus the overdue roster slice.
+                  </p>
+                </div>
+                <span className="text-[1.65rem] font-semibold leading-none" style={{ color: '#295BA7' }}>
+                  {kpis?.overdue_count ?? 0}
+                </span>
+              </div>
+            </button>
+          </div>
+        </SectionCard>
+      </section>
 
       {filters && (
-        <div
-          className="flex flex-wrap items-center gap-4 py-5 px-5 rounded-lg border"
-          style={{ marginBottom: SECTION_GAP, backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', boxShadow: 'none' }}
+        <section
+          className="rounded-[28px] border bg-white px-5 py-5 md:px-6"
+          style={{
+            marginBottom: SECTION_GAP,
+            borderColor: 'rgba(201, 215, 232, 0.9)',
+            boxShadow: 'var(--card-shadow)',
+          }}
         >
-          <input
-            type="search"
-            placeholder="Search student..."
-            value={searchStudent}
-            onChange={(e) => setSearchStudent(e.target.value)}
-            className="w-44 border rounded-[var(--radius-button)] px-3 h-10 text-[var(--body-size)]"
-            style={{ borderColor: '#CBD5E1', backgroundColor: '#fff' }}
-          />
-          <select
-            className="w-32 border rounded-[var(--radius-button)] px-3 h-10 text-[var(--body-size)]"
-            style={{ borderColor: '#CBD5E1', backgroundColor: '#fff' }}
-            value={filter.grade_level ?? 'All'}
-            onChange={(e) => setFilter((f) => ({ ...f, grade_level: e.target.value }))}
-          >
-            <option value="">All Grades</option>
-            {[...filters.grade_levels].sort((a, b) => {
-              const ia = GRADE_ORDER.indexOf(a); const ib = GRADE_ORDER.indexOf(b)
-              return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
-            }).map((g) => (
-              <option key={g} value={g}>{g}</option>
-            ))}
-          </select>
-          <select
-            className="w-36 border rounded-[var(--radius-button)] px-3 h-10 text-[var(--body-size)]"
-            style={{ borderColor: '#CBD5E1', backgroundColor: '#fff' }}
-            value={filter.class_name ?? 'All'}
-            onChange={(e) => setFilter((f) => ({ ...f, class_name: e.target.value }))}
-          >
-            {filters.classes.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <select
-            className="w-40 border rounded-[var(--radius-button)] px-3 h-10 text-[var(--body-size)]"
-            style={{ borderColor: '#CBD5E1', backgroundColor: '#fff' }}
-            value={filter.teacher_name ?? 'All'}
-            onChange={(e) => setFilter((f) => ({ ...f, teacher_name: e.target.value }))}
-          >
-            {filters.teachers.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-          <select
-            className="w-28 border rounded-[var(--radius-button)] px-3 h-10 text-[var(--body-size)]"
-            style={{ borderColor: '#CBD5E1', backgroundColor: '#fff' }}
-            value={filter.school_year ?? 'All'}
-            onChange={(e) => setFilter((f) => ({ ...f, school_year: e.target.value }))}
-          >
-            {filters.school_years.map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-          <button type="button" onClick={resetFilters} className="px-3 py-2 rounded-[var(--radius-button)] h-10 bg-transparent border-0" style={{ color: '#1E3A5F', fontSize: 'var(--button-text-size)', fontWeight: 'var(--button-text-weight)' }}>
-            Reset
-          </button>
-        </div>
-      )}
-
-      {/* Top KPI row: On Track / Monitor / Needs Support + Support Gap + Coverage by window + Tier movement */}
-      <div style={{ marginBottom: SECTION_GAP }}>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-5">
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: kpiFilter === null ? '#93C5FD' : '#E2E8F0' }}>
-            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>Total Students</p>
-            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{total}</p>
-          </button>
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0' }}>
-            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>Assessed</p>
-            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.assessed_pct != null ? Number(kpis.assessed_pct).toFixed(1) : '0'}%</p>
-            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{assessed} of {total}</p>
-          </button>
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0' }}>
-            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>Monitor</p>
-            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.monitor_count ?? 0}</p>
-            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{kpis?.monitor_pct != null ? Number(kpis.monitor_pct).toFixed(1) : '0'}%</p>
-          </button>
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border-t-4 border bg-white text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0', borderTopColor: '#D97706' }}>
-            <p className="text-[var(--label-size)] font-semibold" style={{ color: '#92400E' }}>Needs Support</p>
-            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.needs_support_count ?? 0}</p>
-            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{kpis?.needs_support_pct != null ? Number(kpis.needs_support_pct).toFixed(1) : '0'}%</p>
-          </button>
-          <button type="button" onClick={() => setKpiFilter('no_intervention')} className="min-h-[100px] flex flex-col justify-center rounded-lg border-t-4 border bg-white text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0', borderTopColor: kpiFilter === 'no_intervention' ? '#1E3A5F' : '#DC2626' }} title="Filter: Needs Support with no active intervention">
-            <p className="text-[var(--label-size)] font-semibold" style={{ color: '#991B1B' }}>Support Gap</p>
-            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.support_gap_count ?? 0}</p>
-            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{kpis?.support_gap_pct != null ? Number(kpis.support_gap_pct).toFixed(1) : '0'}% · no intervention</p>
-          </button>
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0' }}>
-            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>Intervention Coverage</p>
-            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.intervention_coverage_pct != null ? Number(kpis.intervention_coverage_pct).toFixed(1) : '0'}%</p>
-            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{kpis?.intervention_coverage_count ?? 0} of {kpis?.needs_support_count || 0}</p>
-          </button>
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0' }} title="% assessed in current window (e.g. Fall)">
-            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>% This window</p>
-            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.assessed_this_window_pct != null ? Number(kpis.assessed_this_window_pct).toFixed(1) : '0'}%</p>
-            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{kpis?.assessed_this_window_count ?? 0} of {total}</p>
-          </button>
-          <button type="button" onClick={() => setKpiFilter('overdue')} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: kpiFilter === 'overdue' ? '#1E3A5F' : '#E2E8F0' }}>
-            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>Median Days Since</p>
-            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.median_days_since_assessment != null ? Number(kpis.median_days_since_assessment).toFixed(1) : '—'}</p>
-          </button>
-          <button type="button" onClick={() => setKpiFilter('overdue')} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: kpiFilter === 'overdue' ? '#1E3A5F' : '#E2E8F0' }}>
-            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>% Overdue (&gt;90d)</p>
-            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>{kpis?.overdue_pct != null ? Number(kpis.overdue_pct).toFixed(1) : '0'}%</p>
-            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>{kpis?.overdue_count ?? 0} students</p>
-          </button>
-          <button type="button" onClick={() => setKpiFilter(null)} className="min-h-[100px] flex flex-col justify-center rounded-lg border bg-[#F7F9FB] text-left" style={{ boxShadow: 'none', padding: 'var(--card-padding)', borderColor: '#E2E8F0' }} title="Tier movement (when tier history is populated)">
-            <p className="text-[var(--label-size)] font-medium" style={{ color: '#64748B' }}>Tier movement</p>
-            <p className="mt-2 font-bold" style={{ fontSize: '1.155em', color: '#1F2937' }}>
-              {(kpis?.tier_moved_down_count ?? 0) > 0 || (kpis?.tier_moved_up_count ?? 0) > 0
-                ? `↓${kpis?.tier_moved_down_count ?? 0} ↑${kpis?.tier_moved_up_count ?? 0}`
-                : '—'}
-            </p>
-            <p className="text-[var(--caption-size)] mt-1" style={{ color: '#94A3B8' }}>Down better · Up worse</p>
-          </button>
-        </div>
-      </div>
-
-      {/* Priority Students (hero) */}
-      <div style={{ marginBottom: SECTION_GAP }}>
-        <div className="rounded-lg border overflow-hidden" style={{ boxShadow: 'none', backgroundColor: '#F7F9FB', borderColor: '#E2E8F0' }}>
-          <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 border-b" style={{ borderColor: '#E2E8F0' }}>
-            <h2 className="font-semibold" style={{ fontSize: 'var(--section-title-size)', fontFamily: 'var(--font-family)', color: '#1F2937' }}>
-              Priority Students
-            </h2>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[var(--label-size)] opacity-70">
-                Flagged Intensive: <strong>{priority?.flagged_intensive ?? 0}</strong>
-              </span>
-              <span className="text-[var(--label-size)] opacity-70">
-                Flagged Strategic: <strong>{priority?.flagged_strategic ?? 0}</strong>
-              </span>
-              <span className="text-[var(--label-size)] opacity-70">
-                Total Flagged: <strong>{priority?.total_flagged ?? 0}</strong>
-              </span>
-              <button type="button" onClick={exportCsv} className="px-3 py-1.5 rounded-[var(--radius-button)] border text-[var(--button-text-size)] font-medium" style={{ borderColor: 'var(--color-border)', color: 'var(--color-primary-accent)' }}>
-                Export
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-muted)' }}>
+                Query layer
+              </p>
+              <h2 className="mt-2 text-[1.15rem] font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                Filters tuned for PowerSchool-style roster pivots
+              </h2>
+            </div>
+            {kpiFilter && (
+              <button
+                type="button"
+                onClick={() => setKpiFilter(null)}
+                className="rounded-full border px-3 py-2 text-sm font-semibold"
+                style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-brand-primary)', backgroundColor: 'var(--color-brand-primary-soft)' }}
+              >
+                {activePriorityLabel}
               </button>
-              <button type="button" disabled className="px-3 py-1.5 rounded-[var(--radius-button)] border border-gray-300 text-gray-400 cursor-not-allowed text-[var(--button-text-size)] font-medium">
-                Assign intervention (coming soon)
+            )}
+          </div>
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))_auto]">
+            <label className="flex flex-col gap-2 text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+              Search student
+              <input
+                type="search"
+                placeholder="Search by student name"
+                value={searchStudent}
+                onChange={(event) => setSearchStudent(event.target.value)}
+                className="h-11 rounded-[16px] border px-4"
+                style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: '#FBFDFF' }}
+              />
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+              Grade
+              <select
+                className="h-11 rounded-[16px] border px-4"
+                style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: '#FBFDFF' }}
+                value={filter.grade_level ?? 'All'}
+                onChange={(event) => setFilter((current) => ({ ...current, grade_level: event.target.value }))}
+              >
+                <option value="All">All grades</option>
+                {gradeOptions.map((grade) => (
+                  <option key={grade} value={grade}>
+                    {grade}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+              Class
+              <select
+                className="h-11 rounded-[16px] border px-4"
+                style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: '#FBFDFF' }}
+                value={filter.class_name ?? 'All'}
+                onChange={(event) => setFilter((current) => ({ ...current, class_name: event.target.value }))}
+              >
+                <option value="All">All classes</option>
+                {classOptions.map((className) => (
+                  <option key={className} value={className}>
+                    {className}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+              Teacher
+              <select
+                className="h-11 rounded-[16px] border px-4"
+                style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: '#FBFDFF' }}
+                value={filter.teacher_name ?? 'All'}
+                onChange={(event) => setFilter((current) => ({ ...current, teacher_name: event.target.value }))}
+              >
+                <option value="All">All teachers</option>
+                {teacherOptions.map((teacher) => (
+                  <option key={teacher} value={teacher}>
+                    {teacher}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+              School year
+              <select
+                className="h-11 rounded-[16px] border px-4"
+                style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: '#FBFDFF' }}
+                value={filter.school_year ?? 'All'}
+                onChange={(event) => setFilter((current) => ({ ...current, school_year: event.target.value }))}
+              >
+                <option value="All">All years</option>
+                {schoolYearOptions.map((schoolYear) => (
+                  <option key={schoolYear} value={schoolYear}>
+                    {schoolYear}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="h-11 rounded-full border px-4 text-sm font-semibold"
+                style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)', backgroundColor: '#FBFDFF' }}
+              >
+                Reset
               </button>
             </div>
           </div>
-          <div className="overflow-x-auto max-h-[560px] overflow-y-auto">
-            <table className="w-full" style={{ fontSize: 'var(--table-text-size)' }}>
-              <thead className="sticky top-0 z-10 text-left" style={{ backgroundColor: '#E2E8F0', borderBottom: '2px solid #CBD5E1' }}>
-                <tr>
-                  <th className="font-semibold py-2.5 px-4" style={{ color: '#1F2937' }}>Name</th>
-                  <th className="font-semibold py-2.5 px-4 text-center" style={{ color: '#1F2937' }}>Support Status</th>
-                  <th className="font-semibold py-2.5 px-4 text-center" style={{ color: '#1F2937' }}>Tier</th>
-                  <th className="font-semibold py-2.5 px-4 text-center" style={{ color: '#1F2937' }}>Has intervention</th>
-                  <th className="font-semibold py-2.5 px-4 text-center" style={{ color: '#1F2937' }}>Days since assessment</th>
-                  <th className="font-semibold py-2.5 px-4 text-center" style={{ color: '#1F2937' }}>Trend</th>
-                  <th className="font-semibold font-bold py-2.5 px-4 text-center" style={{ color: '#1F2937' }}>Priority score</th>
-                  <th className="font-semibold py-2.5 px-4" style={{ color: '#1F2937' }}>Reasons</th>
+        </section>
+      )}
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" style={{ marginBottom: SECTION_GAP }}>
+        <KpiCard label="Students assessed" value={formatPct(kpis?.assessed_pct)} helper={`${assessed} of ${total} students with assessments`} accent="#295BA7" onClick={() => setKpiFilter(null)} />
+        <KpiCard label="Needs support" value={String(needsSupportCount)} helper={`${formatPct(kpis?.needs_support_pct)} of active roster`} accent="#F3B455" onClick={() => setKpiFilter(null)} />
+        <KpiCard label="Support gap" value={String(supportGapCount)} helper={`${formatPct(kpis?.support_gap_pct)} without active intervention`} accent="#B23754" active={kpiFilter === 'no_intervention'} onClick={() => setKpiFilter('no_intervention')} />
+        <KpiCard label="Intervention coverage" value={formatPct(kpis?.intervention_coverage_pct)} helper={`${kpis?.intervention_coverage_count ?? 0} students actively served`} accent="#17663D" onClick={() => setKpiFilter(null)} />
+        <KpiCard label="This window" value={formatPct(kpis?.assessed_this_window_pct)} helper={`${kpis?.assessed_this_window_count ?? 0} students assessed this term`} accent="#5D82D8" onClick={() => setKpiFilter(null)} />
+        <KpiCard label="Median days since" value={formatValue(kpis?.median_days_since_assessment, 1)} helper="Assessment freshness across active roster" accent="#295BA7" active={kpiFilter === 'overdue'} onClick={() => setKpiFilter('overdue')} />
+        <KpiCard label="Overdue > 90 days" value={formatPct(kpis?.overdue_pct)} helper={`${kpis?.overdue_count ?? 0} students need a new assessment`} accent="#295BA7" active={kpiFilter === 'overdue'} onClick={() => setKpiFilter('overdue')} />
+        <KpiCard
+          label="Tier movement"
+          value={(kpis?.tier_moved_down_count ?? 0) > 0 || (kpis?.tier_moved_up_count ?? 0) > 0 ? `D${kpis?.tier_moved_down_count ?? 0} / U${kpis?.tier_moved_up_count ?? 0}` : 'N/A'}
+          helper="Down means lower risk, up means higher risk"
+          accent="#7A5AF8"
+          onClick={() => setKpiFilter(null)}
+        />
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[1.55fr_0.95fr]" style={{ marginBottom: SECTION_GAP }}>
+        <SectionCard
+          title="Priority students"
+          subtitle={`${priorityRows.length} visible in the current roster slice. Click any row to jump into the student profile.`}
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: '#FFF3E4', color: '#A8570C' }}>
+                Intensive {priority?.flagged_intensive ?? 0}
+              </span>
+              <span className="rounded-full px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: '#EAF1FF', color: '#295BA7' }}>
+                Strategic {priority?.flagged_strategic ?? 0}
+              </span>
+              <button
+                type="button"
+                onClick={exportCsv}
+                className="rounded-full border px-3 py-2 text-sm font-semibold"
+                style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)', backgroundColor: 'white' }}
+              >
+                Export
+              </button>
+            </div>
+          }
+        >
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: '#F5F7FB', color: 'var(--color-text-secondary)' }}>
+                Focus: {activePriorityLabel}
+              </span>
+              <span className="rounded-full px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: '#F5F7FB', color: 'var(--color-text-secondary)' }}>
+                Total flagged {priority?.total_flagged ?? 0}
+              </span>
+            </div>
+            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+              Ranked by support status, assessment recency, and growth trend.
+            </p>
+          </div>
+          <div className="max-h-[620px] overflow-auto rounded-[24px] border" style={{ borderColor: 'rgba(217, 226, 236, 0.95)' }}>
+            <table className="w-full min-w-[860px]" style={{ fontSize: 'var(--table-text-size)' }}>
+              <thead className="sticky top-0 z-10" style={{ backgroundColor: 'var(--table-header-bg)' }}>
+                <tr className="text-left">
+                  <th className="px-4 py-3 text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Student</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Support status</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Tier</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Intervention</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Days since</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Trend</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Priority</th>
+                  <th className="px-4 py-3 text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Reasons</th>
                 </tr>
               </thead>
               <tbody>
-                {priorityRows.map((r) => (
-                  <tr
-                    key={r.enrollment_id}
-                    className="tr-hover-bg transition-colors cursor-pointer"
-                    style={{ borderBottom: '1px solid #E2E8F0' }}
-                    onClick={() => {
-                      if (r.student_uuid) {
-                        navigate(`/app/${subject}/student/${r.student_uuid}`)
-                      } else {
-                        navigate(`/app/${subject}/enrollment/${r.enrollment_id}`)
-                      }
-                    }}
-                  >
-                    <td className="py-2 px-4">
-                      <span className="font-semibold" style={{ fontSize: 'var(--table-name-size)', color: '#1E3A5F' }}>
-                        {r.display_name}
-                      </span>
-                      {r.grade_level && <span className="ml-2 text-[var(--caption-size)]" style={{ color: '#94A3B8' }}>{r.grade_level}</span>}
-                    </td>
-                    <td className="py-2 px-4 text-center">
-                      <span
-                        className="inline-block px-2 py-0.5 rounded text-xs font-medium"
-                        style={
-                          r.support_status === 'Needs Support' ? { backgroundColor: '#FEF3C7', color: '#92400E' } :
-                          r.support_status === 'Monitor' ? { backgroundColor: '#E0F2FE', color: '#0369A1' } :
-                          r.support_status === 'On Track' ? { backgroundColor: '#D1FAE5', color: '#065F46' } : { backgroundColor: '#F1F5F9', color: '#475569' }
+                {priorityRows.map((row) => {
+                  const statusTone = supportStatusTone(row.support_status)
+
+                  return (
+                    <tr
+                      key={row.enrollment_id}
+                      className="tr-hover-bg cursor-pointer align-top"
+                      style={{ borderTop: '1px solid rgba(217, 226, 236, 0.9)' }}
+                      onClick={() => {
+                        if (row.student_uuid) {
+                          navigate(`/app/${subjectKey}/student/${row.student_uuid}`)
+                        } else {
+                          navigate(`/app/${subjectKey}/enrollment/${row.enrollment_id}`)
                         }
-                      >
-                        {r.support_status ?? 'Unknown'}
-                      </span>
-                    </td>
-                    <td className="py-2 px-4 text-center">
-                      <RiskBadge tier={tierToDisplayTier(r.tier)} showNotAssessed />
-                    </td>
-                    <td className="py-2 px-4 text-center">{r.has_active_intervention ? 'Yes' : 'No'}</td>
-                    <td className="py-2 px-4 text-center">{r.days_since_assessment ?? '—'}</td>
-                    <td className="py-2 px-4 text-center"><TrendChip trend={r.trend ?? undefined} /></td>
-                    <td className="py-2 px-4 text-center font-bold" style={{ color: '#1F2937' }}>{r.priority_score != null ? Number(r.priority_score).toFixed(1) : '—'}</td>
-                    <td className="py-2 px-4">
-                      {r.reason_chips && r.reason_chips.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {r.reason_chips.map((chip) => (
-                            <span key={chip} className="inline-block px-2 py-0.5 rounded text-xs" style={{ backgroundColor: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
-                              {chip}
-                            </span>
-                          ))}
+                      }}
+                    >
+                      <td className="px-4 py-4">
+                        <div className="flex flex-col gap-1">
+                          <span className="font-semibold" style={{ color: 'var(--color-brand-primary)' }}>
+                            {row.display_name}
+                          </span>
+                          <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                            {row.grade_level ?? 'No grade'}{row.class_name ? ` / ${row.class_name}` : ''}
+                          </span>
                         </div>
-                      ) : (
-                        <span className="text-[var(--caption-size)]" style={{ color: '#94A3B8' }}>{r.reasons ?? '—'}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <span
+                          className="inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold"
+                          style={statusTone}
+                        >
+                          {row.support_status ?? 'Unknown'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <RiskBadge tier={tierToDisplayTier(row.tier)} showNotAssessed />
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <span className="text-sm font-semibold" style={{ color: row.has_active_intervention ? '#17663D' : '#B23754' }}>
+                          {row.has_active_intervention ? 'Active' : 'Missing'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-center" style={{ color: 'var(--color-text-secondary)' }}>
+                        {row.days_since_assessment ?? 'N/A'}
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <TrendChip trend={row.trend ?? undefined} />
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <span
+                          className="inline-flex rounded-full px-3 py-1.5 text-sm font-semibold"
+                          style={{ backgroundColor: '#EFF5FF', color: '#295BA7' }}
+                        >
+                          {row.priority_score != null ? Number(row.priority_score).toFixed(1) : 'N/A'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        {row.reason_chips && row.reason_chips.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {row.reason_chips.map((chip) => (
+                              <span
+                                key={chip}
+                                className="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                style={{ borderColor: '#E3EAF5', backgroundColor: '#F7FAFF', color: 'var(--color-text-secondary)' }}
+                              >
+                                {chip}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                            {row.reasons ?? 'No reason supplied'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
-        </div>
-      </div>
+        </SectionCard>
 
-      {/* Bottom: Growth metrics + Distribution + Avg by grade */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ marginBottom: SECTION_GAP }}>
-        <div className="rounded-[var(--card-radius)] border p-5" style={{ boxShadow: 'var(--card-shadow)', backgroundColor: 'var(--color-bg-surface)', borderColor: 'var(--card-border)' }}>
-          <h2 className="font-semibold text-[var(--color-text)] mb-4" style={{ fontSize: 'var(--section-title-size)', fontFamily: 'var(--font-family)' }}>
-            Growth Metrics
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
-            <div>
-              <p className="text-[var(--label-size)] opacity-70 mb-1">Median growth</p>
-              <p className="text-3xl font-extrabold text-[var(--color-text)]">
-                {growth?.median_growth != null ? Number(growth.median_growth).toFixed(1) : '—'}
-              </p>
-              <p className="text-[var(--caption-size)] opacity-60 mt-1">score points</p>
+        <div className="space-y-5">
+          <SectionCard title="Cohort health" subtitle="Coverage and support posture at a glance.">
+            <div className="space-y-5">
+              <ProgressRow label="Students assessed" value={Number(kpis?.assessed_pct ?? 0)} color="#295BA7" />
+              <ProgressRow label="Needs support" value={Number(kpis?.needs_support_pct ?? 0)} color="#F3B455" />
+              <ProgressRow label="Intervention coverage" value={Number(kpis?.intervention_coverage_pct ?? 0)} color="#17663D" />
+              <ProgressRow label="This window assessed" value={Number(kpis?.assessed_this_window_pct ?? 0)} color="#5D82D8" />
             </div>
-            <div>
-              <p className="text-[var(--label-size)] opacity-70 mb-1">% Improving</p>
-              <p className="text-3xl font-extrabold text-green-700">
-                {growth?.pct_improving != null ? `${Number(growth.pct_improving).toFixed(1)}%` : '0%'}
+          </SectionCard>
+
+          <SectionCard title="Roster attention" subtitle="A compact operating list for weekly team meetings.">
+            <div className="space-y-4">
+              <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.95)', backgroundColor: '#FBFDFF' }}>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                    Flagged students
+                  </p>
+                  <span className="text-xl font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                    {priority?.total_flagged ?? 0}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                  {priority?.flagged_intensive ?? 0} intensive, {priority?.flagged_strategic ?? 0} strategic
+                </p>
+              </div>
+              <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.95)', backgroundColor: '#FBFDFF' }}>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                    Growth data coverage
+                  </p>
+                  <span className="text-xl font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                    {growth?.students_with_growth_data ?? 0}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                  Students with enough history for trend interpretation.
+                </p>
+              </div>
+              <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.95)', backgroundColor: '#FBFDFF' }}>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                    Active focus
+                  </p>
+                  <span className="text-sm font-semibold" style={{ color: 'var(--color-brand-primary)' }}>
+                    {activePriorityLabel}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                  Useful for Schoolzilla-style team huddles and follow-up lists.
+                </p>
+              </div>
+            </div>
+          </SectionCard>
+        </div>
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-2" style={{ marginBottom: SECTION_GAP }}>
+        <SectionCard title="Growth pulse" subtitle="Change over time for students with valid longitudinal data.">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.95)', backgroundColor: '#FBFDFF' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                Median growth
               </p>
-              <p className="text-[var(--caption-size)] opacity-60 mt-1">since last period</p>
+              <p className="mt-3 text-[1.85rem] font-semibold leading-none" style={{ color: 'var(--color-text-primary)' }}>
+                {formatValue(growth?.median_growth, 1)}
+              </p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                Score points
+              </p>
+            </div>
+            <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.95)', backgroundColor: '#FBFDFF' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                Improving
+              </p>
+              <p className="mt-3 text-[1.85rem] font-semibold leading-none" style={{ color: '#17663D' }}>
+                {formatPct(growth?.pct_improving)}
+              </p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                Students trending up
+              </p>
             </div>
             <button
               type="button"
               onClick={() => setKpiFilter('declining')}
-              className="text-left"
-              title="Filter priority table to declining trend"
+              className="rounded-[22px] border p-4 text-left"
+              style={{
+                borderColor: kpiFilter === 'declining' ? '#F6CAD3' : 'rgba(217, 226, 236, 0.95)',
+                backgroundColor: kpiFilter === 'declining' ? '#FFF3F6' : '#FBFDFF',
+              }}
             >
-              <p className="text-[var(--label-size)] opacity-70 mb-1">% Declining</p>
-              <p
-                className={`text-3xl font-extrabold text-amber-700 ${
-                  kpiFilter === 'declining' ? 'ring-2 ring-[var(--color-primary)] rounded px-1' : ''
-                }`}
-              >
-                {growth?.pct_declining != null ? `${Number(growth.pct_declining).toFixed(1)}%` : '0%'}
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                Declining
               </p>
-              <p className="text-[var(--caption-size)] opacity-60 mt-1">click to filter table</p>
+              <p className="mt-3 text-[1.85rem] font-semibold leading-none" style={{ color: '#B23754' }}>
+                {formatPct(growth?.pct_declining)}
+              </p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                Click to focus the table
+              </p>
             </button>
-            <div>
-              <p className="text-[var(--label-size)] opacity-70 mb-1">Students w/ growth data</p>
-              <p className="text-3xl font-extrabold text-[var(--color-text)]">
+            <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.95)', backgroundColor: '#FBFDFF' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                Stable
+              </p>
+              <p className="mt-3 text-[1.85rem] font-semibold leading-none" style={{ color: '#295BA7' }}>
+                {formatPct(growth?.pct_stable)}
+              </p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                Low movement between windows
+              </p>
+            </div>
+            <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.95)', backgroundColor: '#FBFDFF' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                Avg growth
+              </p>
+              <p className="mt-3 text-[1.85rem] font-semibold leading-none" style={{ color: 'var(--color-text-primary)' }}>
+                {formatValue(growth?.avg_growth, 1)}
+              </p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                Mean change in score
+              </p>
+            </div>
+            <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.95)', backgroundColor: '#FBFDFF' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                Best gain
+              </p>
+              <p className="mt-3 text-[1.85rem] font-semibold leading-none" style={{ color: '#17663D' }}>
+                {growth?.max_growth != null ? `+${Number(growth.max_growth).toFixed(1)}` : 'N/A'}
+              </p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                Highest positive change
+              </p>
+            </div>
+            <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.95)', backgroundColor: '#FBFDFF' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                Largest drop
+              </p>
+              <p className="mt-3 text-[1.85rem] font-semibold leading-none" style={{ color: '#B23754' }}>
+                {formatValue(growth?.min_growth, 1)}
+              </p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                Most negative change
+              </p>
+            </div>
+            <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.95)', backgroundColor: '#FBFDFF' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                Growth data
+              </p>
+              <p className="mt-3 text-[1.85rem] font-semibold leading-none" style={{ color: 'var(--color-text-primary)' }}>
                 {growth?.students_with_growth_data ?? 0}
               </p>
-              <p className="text-[var(--caption-size)] opacity-60 mt-1">in current filters</p>
-            </div>
-            <div>
-              <p className="text-[var(--label-size)] opacity-70 mb-1">% Stable</p>
-              <p className="text-3xl font-extrabold text-sky-700">
-                {growth?.pct_stable != null ? `${Number(growth.pct_stable).toFixed(1)}%` : '0%'}
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                Students with enough history
               </p>
-              <p className="text-[var(--caption-size)] opacity-60 mt-1">little change between last two</p>
-            </div>
-            <div>
-              <p className="text-[var(--label-size)] opacity-70 mb-1">Avg growth</p>
-              <p className="text-3xl font-extrabold text-[var(--color-text)]">
-                {growth?.avg_growth != null ? Number(growth.avg_growth).toFixed(1) : '—'}
-              </p>
-              <p className="text-[var(--caption-size)] opacity-60 mt-1">mean change in score</p>
-            </div>
-            <div>
-              <p className="text-[var(--label-size)] opacity-70 mb-1">Best gain</p>
-              <p className="text-3xl font-extrabold text-emerald-700">
-                {growth?.max_growth != null ? `+${Number(growth.max_growth).toFixed(1)}` : '—'}
-              </p>
-              <p className="text-[var(--caption-size)] opacity-60 mt-1">top positive change</p>
-            </div>
-            <div>
-              <p className="text-[var(--label-size)] opacity-70 mb-1">Largest drop</p>
-              <p className="text-3xl font-extrabold text-red-700">
-                {growth?.min_growth != null ? Number(growth.min_growth).toFixed(1) : '—'}
-              </p>
-              <p className="text-[var(--caption-size)] opacity-60 mt-1">most negative change</p>
             </div>
           </div>
-        </div>
+        </SectionCard>
 
-        <div className="rounded-[var(--card-radius)] border p-5" style={{ boxShadow: 'var(--card-shadow)', backgroundColor: 'var(--color-bg-surface)', borderColor: 'var(--card-border)' }}>
-          <h2 className="font-semibold text-[var(--color-text)] mb-4" style={{ fontSize: 'var(--section-title-size)', fontFamily: 'var(--font-family)' }}>
-            Score distribution
-          </h2>
+        <SectionCard title="Score distribution" subtitle="Latest assessment distribution with benchmark context.">
           {histogramData.length > 0 ? (
-            <div className="h-[220px]">
+            <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={histogramData} margin={{ top: 16, right: 16, left: 36, bottom: 36 }}>
+                <BarChart data={histogramData} margin={{ top: 12, right: 18, left: 18, bottom: 28 }}>
                   <XAxis
                     dataKey="bin_min"
                     type="number"
-                    tick={{ fontSize: 12 }}
-                    tickFormatter={(v) => `${v}`}
-                    label={{ value: 'Latest assessment score (0–100)', position: 'insideBottom', offset: -8, style: { textAnchor: 'middle', fontSize: 12 } }}
+                    tick={{ fontSize: 12, fill: '#62748D' }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(value) => `${value}`}
+                    label={{ value: 'Latest assessment score (0-100)', position: 'insideBottom', offset: -12, style: { textAnchor: 'middle', fontSize: 12, fill: '#62748D' } }}
                   />
                   <YAxis
-                    tick={{ fontSize: 12 }}
+                    tick={{ fontSize: 12, fill: '#62748D' }}
+                    axisLine={false}
+                    tickLine={false}
                     domain={[0, distributionYMax]}
-                    label={{ value: 'Number of students', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fontSize: 12 } }}
+                    label={{ value: 'Students', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fontSize: 12, fill: '#62748D' } }}
                   />
                   <Tooltip
-                    formatter={(value: number, _name: string, props: { payload?: { count?: number; pct?: number } }) => {
-                      const count = props.payload?.count ?? value
-                      const pct = props.payload?.pct ?? 0
-                      return [`${count} (${Number(pct).toFixed(1)}%)`, 'Count']
+                    contentStyle={{ borderRadius: 16, borderColor: '#D9E2EC', boxShadow: '0 16px 32px rgba(20, 33, 61, 0.12)' }}
+                    formatter={(value: number | string | undefined, _name?: string, props?: { payload?: { count?: number; pct?: number } }) => {
+                      const count = props?.payload?.count ?? value
+                      const pct = props?.payload?.pct ?? 0
+                      return [`${count} students (${Number(pct).toFixed(1)}%)`, 'Count']
                     }}
                     labelFormatter={(label, payload) => {
-                      const p = payload?.[0]?.payload as { bin_min?: number; bin_max?: number } | undefined
-                      return p ? `Score ${p.bin_min}-${p.bin_max}` : String(label)
+                      const row = payload?.[0]?.payload as { bin_min?: number; bin_max?: number } | undefined
+                      return row ? `Score ${row.bin_min}-${row.bin_max}` : String(label)
                     }}
                   />
                   {distribution?.support_threshold != null && (
-                    <ReferenceLine x={distribution.support_threshold} stroke="#dc2626" strokeWidth={1.5} strokeDasharray="4 4" label={{ value: 'Support', position: 'top', fontSize: 10 }} />
+                    <ReferenceLine x={distribution.support_threshold} stroke="#B23754" strokeWidth={1.5} strokeDasharray="5 5" label={{ value: 'Support', position: 'top', fontSize: 11, fill: '#B23754' }} />
                   )}
                   {distribution?.benchmark_threshold != null && (
-                    <ReferenceLine x={distribution.benchmark_threshold} stroke="#16a34a" strokeWidth={1.5} strokeDasharray="4 4" label={{ value: 'Benchmark', position: 'top', fontSize: 10 }} />
+                    <ReferenceLine x={distribution.benchmark_threshold} stroke="#17663D" strokeWidth={1.5} strokeDasharray="5 5" label={{ value: 'Benchmark', position: 'top', fontSize: 11, fill: '#17663D' }} />
                   )}
-                  <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
-                    {histogramData.map((_, i) => (
-                      <Cell key={i} fill="var(--color-primary)" />
+                  <Bar dataKey="count" radius={[8, 8, 0, 0]}>
+                    {histogramData.map((_, index) => (
+                      <Cell key={index} fill={index % 2 === 0 ? '#295BA7' : '#7CA7F7'} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <p className="text-[var(--caption-size)] opacity-70">No score data for current filters.</p>
+            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+              No score data available for the current filter set.
+            </p>
           )}
-        </div>
-      </div>
+        </SectionCard>
+      </section>
 
       {distribution?.avg_by_grade && distribution.avg_by_grade.length > 0 && (
-        <div className="rounded-[var(--card-radius)] border p-5" style={{ marginBottom: SECTION_GAP, boxShadow: 'var(--card-shadow)', backgroundColor: 'var(--color-bg-surface)', borderColor: 'var(--card-border)' }}>
-          <h2 className="font-semibold text-[var(--color-text)] mb-4" style={{ fontSize: 'var(--section-title-size)', fontFamily: 'var(--font-family)' }}>
-            Avg score by grade
-          </h2>
-          <div className="h-[260px]">
+        <SectionCard
+          title="Average score by grade"
+          subtitle="Compares average score and the percentage of students needing support."
+          className="overflow-hidden"
+        >
+          <div className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={sortByGrade(distribution.avg_by_grade)} margin={{ top: 8, right: 48, left: 32, bottom: 24 }} barCategoryGap="20%" barGap={8}>
-                <XAxis dataKey="grade_level" tick={{ fontSize: 14 }} />
-                <YAxis yAxisId="left" domain={[0, 105]} tick={{ fontSize: 14 }} label={{ value: 'Score (pts)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle' } }} />
-                <YAxis yAxisId="right" orientation="right" domain={[0, 100]} tick={{ fontSize: 12 }} tickFormatter={(v) => `${v}%`} />
-                <Tooltip formatter={(value: number, name: string) => [name === 'Avg Score' ? Number(value).toFixed(1) : `${Number(value).toFixed(1)}%`, name]} />
-                <ReferenceLine yAxisId="left" y={70} stroke="#22c55e" strokeWidth={1.5} strokeDasharray="4 4" />
-                <Bar yAxisId="left" dataKey="average_score" name="Avg Score" radius={[4, 4, 0, 0]} fill="var(--color-primary)" />
-                <Bar yAxisId="right" dataKey="pct_needs_support" name="% Needs Support" radius={[4, 4, 0, 0]} fill="#f59e0b" />
+              <BarChart data={sortByGrade(distribution.avg_by_grade)} margin={{ top: 8, right: 20, left: 12, bottom: 20 }} barGap={8}>
+                <XAxis dataKey="grade_level" tick={{ fontSize: 12, fill: '#62748D' }} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="left" tick={{ fontSize: 12, fill: '#62748D' }} axisLine={false} tickLine={false} domain={[0, 105]} label={{ value: 'Score', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fontSize: 12, fill: '#62748D' } }} />
+                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12, fill: '#62748D' }} axisLine={false} tickLine={false} domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
+                <Tooltip
+                  contentStyle={{ borderRadius: 16, borderColor: '#D9E2EC', boxShadow: '0 16px 32px rgba(20, 33, 61, 0.12)' }}
+                  formatter={(value: number | string | undefined, name?: string) => [name === 'Avg score' ? Number(value ?? 0).toFixed(1) : `${Number(value ?? 0).toFixed(1)}%`, name ?? 'Value']}
+                />
+                <ReferenceLine yAxisId="left" y={70} stroke="#17663D" strokeWidth={1.5} strokeDasharray="5 5" />
+                <Bar yAxisId="left" dataKey="average_score" name="Avg score" radius={[8, 8, 0, 0]} fill="#295BA7" />
+                <Bar yAxisId="right" dataKey="pct_needs_support" name="% needs support" radius={[8, 8, 0, 0]} fill="#F3B455" />
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </SectionCard>
       )}
     </div>
   )
