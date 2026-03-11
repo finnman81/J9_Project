@@ -120,7 +120,7 @@ function KpiCard({
     <button
       type="button"
       onClick={onClick}
-      className="group rounded-[24px] border p-5 text-left"
+      className="group h-full min-w-0 overflow-hidden rounded-[24px] border p-5 text-left"
       style={{
         borderColor: active ? accent : 'rgba(201, 215, 232, 0.9)',
         background: active ? `linear-gradient(180deg, ${accent}12, #ffffff)` : 'linear-gradient(180deg, #fbfdff, #ffffff)',
@@ -128,19 +128,22 @@ function KpiCard({
       }}
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
             {label}
           </p>
-          <p className="mt-3 text-[2rem] font-semibold leading-none" style={{ color: 'var(--color-text-primary)' }}>
+          <p
+            className="mt-3 max-w-full overflow-hidden text-[clamp(1.5rem,2.2vw,1.875rem)] font-semibold leading-tight tracking-[-0.02em]"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
             {value}
           </p>
-          <p className="mt-3 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          <p className="mt-3 text-[13px] leading-5" style={{ color: 'var(--color-text-muted)' }}>
             {helper}
           </p>
         </div>
         <span
-          className="h-11 w-11 rounded-2xl"
+          className="h-11 w-11 shrink-0 rounded-2xl"
           style={{
             background: `linear-gradient(135deg, ${accent}20, ${accent}08)`,
             border: `1px solid ${accent}32`,
@@ -337,10 +340,7 @@ export function OverviewDashboard() {
   const supportGapCount = kpis?.support_gap_count ?? 0
   const needsSupportCount = kpis?.needs_support_count ?? 0
   const activePriorityLabel = kpiFilter ? PRIORITY_FILTER_LABEL[kpiFilter] : 'All flagged students'
-  const executiveSummary =
-    supportGapCount > 0
-      ? `${supportGapCount} students need intervention follow-through, while ${formatPct(kpis?.assessed_this_window_pct)} are current in this benchmark window.`
-      : `${formatPct(kpis?.assessed_this_window_pct)} of students are current in this benchmark window, and intervention coverage is ${formatPct(kpis?.intervention_coverage_pct)}.`
+  const heroTitle = `${subjectLabel} performance dashboard`
 
   const exportCsv = () => {
     if (!priorityRows.length) return
@@ -401,18 +401,12 @@ export function OverviewDashboard() {
         >
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div className="max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--color-brand-primary)' }}>
-                {subjectLabel} performance intelligence
-              </p>
               <h1
-                className="mt-4 text-[2rem] font-semibold leading-tight md:text-[2.5rem]"
+                className="text-[1.8rem] font-semibold leading-tight md:text-[2.3rem]"
                 style={{ fontFamily: 'var(--font-family)', color: 'var(--color-text-primary)' }}
               >
-                A lighter SIS experience for campus leaders, interventionists, and classroom teams.
+                {heroTitle}
               </h1>
-              <p className="mt-4 max-w-2xl text-base leading-7" style={{ color: 'var(--color-text-secondary)' }}>
-                {executiveSummary}
-              </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <button
@@ -433,38 +427,38 @@ export function OverviewDashboard() {
             </div>
           </div>
 
-          <div className="mt-8 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="mt-8 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
             <div className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-[24px] border bg-white/80 p-5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
+              <div className="min-w-0 rounded-[24px] border bg-white/80 p-5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
                 <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
                   Students in scope
                 </p>
-                <p className="mt-3 text-[2rem] font-semibold leading-none" style={{ color: 'var(--color-text-primary)' }}>
+                <p className="mt-3 text-[clamp(1.5rem,2.3vw,1.95rem)] font-semibold leading-tight tracking-[-0.02em]" style={{ color: 'var(--color-text-primary)' }}>
                   {total}
                 </p>
-                <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                <p className="mt-2 text-[13px] leading-5" style={{ color: 'var(--color-text-muted)' }}>
                   Current {subjectLabel.toLowerCase()} roster in selected context
                 </p>
               </div>
-              <div className="rounded-[24px] border bg-white/80 p-5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
+              <div className="min-w-0 rounded-[24px] border bg-white/80 p-5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
                 <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
                   Assessed coverage
                 </p>
-                <p className="mt-3 text-[2rem] font-semibold leading-none" style={{ color: 'var(--color-text-primary)' }}>
+                <p className="mt-3 text-[clamp(1.5rem,2.3vw,1.95rem)] font-semibold leading-tight tracking-[-0.02em]" style={{ color: 'var(--color-text-primary)' }}>
                   {formatPct(kpis?.assessed_pct)}
                 </p>
-                <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                <p className="mt-2 text-[13px] leading-5" style={{ color: 'var(--color-text-muted)' }}>
                   {assessed} of {total} students have assessment history
                 </p>
               </div>
-              <div className="rounded-[24px] border bg-white/80 p-5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
+              <div className="min-w-0 rounded-[24px] border bg-white/80 p-5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
                 <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
                   Support gap
                 </p>
-                <p className="mt-3 text-[2rem] font-semibold leading-none" style={{ color: 'var(--color-text-primary)' }}>
+                <p className="mt-3 text-[clamp(1.5rem,2.3vw,1.95rem)] font-semibold leading-tight tracking-[-0.02em]" style={{ color: 'var(--color-text-primary)' }}>
                   {supportGapCount}
                 </p>
-                <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                <p className="mt-2 text-[13px] leading-5" style={{ color: 'var(--color-text-muted)' }}>
                   Students flagged without an active intervention
                 </p>
               </div>
@@ -720,7 +714,7 @@ export function OverviewDashboard() {
         </section>
       )}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" style={{ marginBottom: SECTION_GAP }}>
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" style={{ marginBottom: SECTION_GAP }}>
         <KpiCard label="Students assessed" value={formatPct(kpis?.assessed_pct)} helper={`${assessed} of ${total} students with assessments`} accent="#295BA7" onClick={() => setKpiFilter(null)} />
         <KpiCard label="Needs support" value={String(needsSupportCount)} helper={`${formatPct(kpis?.needs_support_pct)} of active roster`} accent="#F3B455" onClick={() => setKpiFilter(null)} />
         <KpiCard label="Support gap" value={String(supportGapCount)} helper={`${formatPct(kpis?.support_gap_pct)} without active intervention`} accent="#B23754" active={kpiFilter === 'no_intervention'} onClick={() => setKpiFilter('no_intervention')} />
@@ -774,7 +768,7 @@ export function OverviewDashboard() {
             </p>
           </div>
           <div className="max-h-[620px] overflow-auto rounded-[24px] border" style={{ borderColor: 'rgba(217, 226, 236, 0.95)' }}>
-            <table className="w-full min-w-[860px]" style={{ fontSize: 'var(--table-text-size)' }}>
+            <table className="w-full min-w-[760px]" style={{ fontSize: 'var(--table-text-size)' }}>
               <thead className="sticky top-0 z-10" style={{ backgroundColor: 'var(--table-header-bg)' }}>
                 <tr className="text-left">
                   <th className="px-4 py-3 text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Student</th>
