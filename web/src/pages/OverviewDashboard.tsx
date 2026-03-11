@@ -428,38 +428,38 @@ export function OverviewDashboard() {
           </div>
 
           <div className="mt-8 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
               <div className="min-w-0 rounded-[24px] border bg-white/80 p-5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
                 <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
                   Students in scope
                 </p>
-                <p className="mt-3 text-[clamp(1.5rem,2.3vw,1.95rem)] font-semibold leading-tight tracking-[-0.02em]" style={{ color: 'var(--color-text-primary)' }}>
+                <p className="mt-3 text-[clamp(1.4rem,2vw,1.85rem)] font-semibold leading-tight tracking-[-0.02em]" style={{ color: 'var(--color-text-primary)' }}>
                   {total}
                 </p>
-                <p className="mt-2 text-[13px] leading-5" style={{ color: 'var(--color-text-muted)' }}>
-                  Current {subjectLabel.toLowerCase()} roster in selected context
+                <p className="mt-2 text-xs leading-4" style={{ color: 'var(--color-text-muted)' }}>
+                  Selected {subjectLabel.toLowerCase()} roster
                 </p>
               </div>
               <div className="min-w-0 rounded-[24px] border bg-white/80 p-5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
                 <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
                   Assessed coverage
                 </p>
-                <p className="mt-3 text-[clamp(1.5rem,2.3vw,1.95rem)] font-semibold leading-tight tracking-[-0.02em]" style={{ color: 'var(--color-text-primary)' }}>
+                <p className="mt-3 text-[clamp(1.4rem,2vw,1.85rem)] font-semibold leading-tight tracking-[-0.02em]" style={{ color: 'var(--color-text-primary)' }}>
                   {formatPct(kpis?.assessed_pct)}
                 </p>
-                <p className="mt-2 text-[13px] leading-5" style={{ color: 'var(--color-text-muted)' }}>
-                  {assessed} of {total} students have assessment history
+                <p className="mt-2 text-xs leading-4" style={{ color: 'var(--color-text-muted)' }}>
+                  {assessed} of {total} assessed
                 </p>
               </div>
               <div className="min-w-0 rounded-[24px] border bg-white/80 p-5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
                 <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
                   Support gap
                 </p>
-                <p className="mt-3 text-[clamp(1.5rem,2.3vw,1.95rem)] font-semibold leading-tight tracking-[-0.02em]" style={{ color: 'var(--color-text-primary)' }}>
+                <p className="mt-3 text-[clamp(1.4rem,2vw,1.85rem)] font-semibold leading-tight tracking-[-0.02em]" style={{ color: 'var(--color-text-primary)' }}>
                   {supportGapCount}
                 </p>
-                <p className="mt-2 text-[13px] leading-5" style={{ color: 'var(--color-text-muted)' }}>
-                  Students flagged without an active intervention
+                <p className="mt-2 text-xs leading-4" style={{ color: 'var(--color-text-muted)' }}>
+                  Without active intervention
                 </p>
               </div>
             </div>
