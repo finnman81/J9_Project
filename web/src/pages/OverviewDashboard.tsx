@@ -30,6 +30,7 @@ const PRIORITY_FILTER_LABEL: Record<Exclude<KpiFilter, null>, string> = {
 }
 
 type KpiFilter = 'overdue' | 'declining' | 'no_intervention' | null
+type PrioritySort = 'priority' | 'days_since' | 'name'
 
 function sortByGrade<T extends { grade_level: string }>(rows: T[]): T[] {
   const order = new Map(GRADE_ORDER.map((g, i) => [g, i]))
@@ -60,12 +61,14 @@ function supportStatusTone(status?: string | null) {
 }
 
 function SectionCard({
+  eyebrow = 'Insight',
   title,
   subtitle,
   actions,
   children,
   className = '',
 }: {
+  eyebrow?: string
   title: string
   subtitle?: string
   actions?: ReactNode
@@ -83,7 +86,7 @@ function SectionCard({
       <div className="flex flex-wrap items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: 'rgba(217, 226, 236, 0.9)' }}>
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-muted)' }}>
-            Analytics block
+            {eyebrow}
           </p>
           <h2 className="mt-2 text-[1.2rem] font-semibold leading-tight" style={{ color: 'var(--color-text-primary)' }}>
             {title}
@@ -203,6 +206,7 @@ export function OverviewDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [kpiFilter, setKpiFilter] = useState<KpiFilter>(null)
+  const [prioritySort, setPrioritySort] = useState<PrioritySort>('priority')
   const [searchStudent, setSearchStudent] = useState('')
   const [lastSynced, setLastSynced] = useState<Date | null>(null)
 
@@ -315,8 +319,16 @@ export function OverviewDashboard() {
       list = list.filter((row) => !row.has_active_intervention && (row.tier === 'Intensive' || row.tier === 'Strategic'))
     }
 
+    if (prioritySort === 'days_since') {
+      list.sort((a, b) => (b.days_since_assessment ?? -1) - (a.days_since_assessment ?? -1))
+    } else if (prioritySort === 'name') {
+      list.sort((a, b) => (a.display_name ?? '').localeCompare(b.display_name ?? ''))
+    } else {
+      list.sort((a, b) => (b.priority_score ?? -1) - (a.priority_score ?? -1))
+    }
+
     return list
-  }, [kpiFilter, priority, searchStudent])
+  }, [kpiFilter, priority, prioritySort, searchStudent])
 
   const histogramData = useMemo(() => {
     if (!distribution?.bins?.length) return []
@@ -341,6 +353,12 @@ export function OverviewDashboard() {
   const needsSupportCount = kpis?.needs_support_count ?? 0
   const activePriorityLabel = kpiFilter ? PRIORITY_FILTER_LABEL[kpiFilter] : 'All flagged students'
   const heroTitle = `${subjectLabel} performance dashboard`
+  const activeScopeFilters = [
+    filter.grade_level && filter.grade_level !== 'All' ? { key: 'grade', label: `Grade: ${filter.grade_level}` } : null,
+    filter.class_name && filter.class_name !== 'All' ? { key: 'class', label: `Class: ${filter.class_name}` } : null,
+    filter.teacher_name && filter.teacher_name !== 'All' ? { key: 'teacher', label: `Teacher: ${filter.teacher_name}` } : null,
+    filter.school_year && filter.school_year !== 'All' ? { key: 'year', label: `Year: ${filter.school_year}` } : null,
+  ].filter(Boolean) as { key: string; label: string }[]
 
   const exportCsv = () => {
     if (!priorityRows.length) return
@@ -387,7 +405,7 @@ export function OverviewDashboard() {
   return (
     <div className="mx-auto" style={{ maxWidth: 'var(--content-max-width)' }}>
       <section
-        className="grid gap-5 xl:grid-cols-[1.45fr_0.95fr]"
+        className="grid gap-5 2xl:grid-cols-[1.45fr_0.95fr]"
         style={{ marginBottom: SECTION_GAP }}
       >
         <div
@@ -427,8 +445,8 @@ export function OverviewDashboard() {
             </div>
           </div>
 
-          <div className="mt-8 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-            <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+          <div className="mt-8 grid gap-4 2xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-2">
               <div className="min-w-0 rounded-[24px] border bg-white/80 p-5" style={{ borderColor: 'rgba(201, 215, 232, 0.8)' }}>
                 <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
                   Students in scope
@@ -472,16 +490,23 @@ export function OverviewDashboard() {
               }}
             >
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-muted)' }}>
-                Model + UX direction
+                Current scope
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
-                {['PowerSchool data model', 'Schoolzilla workflows', 'Light visual polish'].map((pill) => (
+                {(activeScopeFilters.length > 0
+                  ? activeScopeFilters
+                  : [
+                      { key: 'all-students', label: 'All students' },
+                      { key: 'all-teachers', label: 'All teachers' },
+                      { key: 'all-years', label: defaultSchoolYear },
+                    ]
+                ).map((pill) => (
                   <span
-                    key={pill}
+                    key={pill.key}
                     className="rounded-full px-3 py-1.5 text-xs font-semibold"
                     style={{ backgroundColor: 'var(--color-brand-primary-soft)', color: 'var(--color-brand-primary)' }}
                   >
-                    {pill}
+                    {pill.label}
                   </span>
                 ))}
               </div>
@@ -508,8 +533,9 @@ export function OverviewDashboard() {
         </div>
 
         <SectionCard
-          title="Operational signals"
-          subtitle="Quick decisions that mirror student support workflows."
+          eyebrow="Action queue"
+          title="Needs attention now"
+          subtitle="Fast decisions for intervention and assessment follow-up."
           actions={
             <button
               type="button"
@@ -517,7 +543,7 @@ export function OverviewDashboard() {
               className="rounded-full border px-3 py-2 text-sm font-semibold"
               style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)', backgroundColor: 'white' }}
             >
-              Clear focus
+              Show all students
             </button>
           }
         >
@@ -534,10 +560,10 @@ export function OverviewDashboard() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                    Intervention follow-through
+                    Students without supports
                   </p>
                   <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                    Students needing support with no active intervention plan.
+                    Needs-support students without an active intervention plan.
                   </p>
                 </div>
                 <span className="text-[1.65rem] font-semibold leading-none" style={{ color: '#A8570C' }}>
@@ -557,7 +583,7 @@ export function OverviewDashboard() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                    Growth watchlist
+                    Declining trends
                   </p>
                   <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
                     Students with declining trends since the last assessment window.
@@ -580,10 +606,10 @@ export function OverviewDashboard() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                    Assessment freshness
+                    Overdue assessments
                   </p>
                   <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                    Median days since assessment plus the overdue roster slice.
+                    Students who are past the current assessment cadence.
                   </p>
                 </div>
                 <span className="text-[1.65rem] font-semibold leading-none" style={{ color: '#295BA7' }}>
@@ -607,24 +633,53 @@ export function OverviewDashboard() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-muted)' }}>
-                Query layer
+                Filters
               </p>
               <h2 className="mt-2 text-[1.15rem] font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                Filters tuned for PowerSchool-style roster pivots
+                Refine the roster
               </h2>
             </div>
-            {kpiFilter && (
-              <button
-                type="button"
-                onClick={() => setKpiFilter(null)}
-                className="rounded-full border px-3 py-2 text-sm font-semibold"
-                style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-brand-primary)', backgroundColor: 'var(--color-brand-primary-soft)' }}
-              >
-                {activePriorityLabel}
-              </button>
-            )}
+            <div className="flex flex-wrap items-center gap-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+              <span>{priorityRows.length} students shown</span>
+              {kpiFilter && (
+                <button
+                  type="button"
+                  onClick={() => setKpiFilter(null)}
+                  className="rounded-full border px-3 py-2 text-sm font-semibold"
+                  style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-brand-primary)', backgroundColor: 'var(--color-brand-primary-soft)' }}
+                >
+                  {activePriorityLabel}
+                </button>
+              )}
+            </div>
           </div>
-          <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))_auto]">
+          <div className="mt-5 flex flex-wrap gap-2">
+            {[
+              { label: 'All students', filter: null as KpiFilter, count: priority?.total_flagged ?? priorityRows.length },
+              { label: 'Support gaps', filter: 'no_intervention' as KpiFilter, count: supportGapCount },
+              { label: 'Declining', filter: 'declining' as KpiFilter, count: Math.round((growth?.pct_declining ?? 0) > 0 ? priorityRows.filter((row) => row.trend === 'Declining').length : 0) },
+              { label: 'Overdue', filter: 'overdue' as KpiFilter, count: kpis?.overdue_count ?? 0 },
+            ].map((view) => {
+              const isActive = kpiFilter === view.filter
+
+              return (
+                <button
+                  key={view.label}
+                  type="button"
+                  onClick={() => setKpiFilter(view.filter)}
+                  className="rounded-full border px-3 py-2 text-sm font-semibold"
+                  style={{
+                    borderColor: isActive ? 'var(--color-brand-primary)' : 'var(--color-border-subtle)',
+                    color: isActive ? 'var(--color-brand-primary)' : 'var(--color-text-secondary)',
+                    backgroundColor: isActive ? 'var(--color-brand-primary-soft)' : '#FBFDFF',
+                  }}
+                >
+                  {view.label} · {view.count}
+                </button>
+              )
+            })}
+          </div>
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))_auto]">
             <label className="flex flex-col gap-2 text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
               Search student
               <input
@@ -711,6 +766,26 @@ export function OverviewDashboard() {
               </button>
             </div>
           </div>
+          {activeScopeFilters.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {activeScopeFilters.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={() => {
+                    if (chip.key === 'grade') setFilter((current) => ({ ...current, grade_level: 'All' }))
+                    if (chip.key === 'class') setFilter((current) => ({ ...current, class_name: 'All' }))
+                    if (chip.key === 'teacher') setFilter((current) => ({ ...current, teacher_name: 'All' }))
+                    if (chip.key === 'year') setFilter((current) => ({ ...current, school_year: 'All' }))
+                  }}
+                  className="rounded-full border px-3 py-1.5 text-xs font-semibold"
+                  style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: '#F7FAFF', color: 'var(--color-text-secondary)' }}
+                >
+                  {chip.label} ×
+                </button>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -731,10 +806,11 @@ export function OverviewDashboard() {
         />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[1.55fr_0.95fr]" style={{ marginBottom: SECTION_GAP }}>
+      <section className="grid gap-5 2xl:grid-cols-[1.55fr_0.95fr]" style={{ marginBottom: SECTION_GAP }}>
         <SectionCard
-          title="Priority students"
-          subtitle={`${priorityRows.length} visible in the current roster slice. Click any row to jump into the student profile.`}
+          eyebrow="Students"
+          title="Students needing attention"
+          subtitle={`${priorityRows.length} visible in the current roster slice. Click any row to open the student profile.`}
           actions={
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: '#FFF3E4', color: '#A8570C' }}>
@@ -751,6 +827,19 @@ export function OverviewDashboard() {
               >
                 Export
               </button>
+              <label className="flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold" style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)', backgroundColor: 'white' }}>
+                Sort
+                <select
+                  value={prioritySort}
+                  onChange={(event) => setPrioritySort(event.target.value as PrioritySort)}
+                  className="bg-transparent text-sm font-semibold outline-none"
+                  style={{ color: 'var(--color-text-primary)' }}
+                >
+                  <option value="priority">Priority</option>
+                  <option value="days_since">Days since</option>
+                  <option value="name">Name</option>
+                </select>
+              </label>
             </div>
           }
         >
@@ -768,10 +857,20 @@ export function OverviewDashboard() {
             </p>
           </div>
           <div className="max-h-[620px] overflow-auto rounded-[24px] border" style={{ borderColor: 'rgba(217, 226, 236, 0.95)' }}>
+            {priorityRows.length === 0 ? (
+              <div className="px-6 py-12 text-center">
+                <p className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                  No students match this view.
+                </p>
+                <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                  Clear a quick view or remove a roster filter to see more students.
+                </p>
+              </div>
+            ) : (
             <table className="w-full min-w-[760px]" style={{ fontSize: 'var(--table-text-size)' }}>
               <thead className="sticky top-0 z-10" style={{ backgroundColor: 'var(--table-header-bg)' }}>
                 <tr className="text-left">
-                  <th className="px-4 py-3 text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Student</th>
+                  <th className="sticky left-0 z-20 px-4 py-3 text-sm font-semibold" style={{ color: 'var(--color-text-secondary)', backgroundColor: 'var(--table-header-bg)' }}>Student</th>
                   <th className="px-4 py-3 text-center text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Support status</th>
                   <th className="px-4 py-3 text-center text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Tier</th>
                   <th className="px-4 py-3 text-center text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Intervention</th>
@@ -798,7 +897,7 @@ export function OverviewDashboard() {
                         }
                       }}
                     >
-                      <td className="px-4 py-4">
+                      <td className="sticky left-0 px-4 py-4" style={{ backgroundColor: '#FFFFFF' }}>
                         <div className="flex flex-col gap-1">
                           <span className="font-semibold" style={{ color: 'var(--color-brand-primary)' }}>
                             {row.display_name}
@@ -862,11 +961,12 @@ export function OverviewDashboard() {
                 })}
               </tbody>
             </table>
+            )}
           </div>
         </SectionCard>
 
         <div className="space-y-5">
-          <SectionCard title="Cohort health" subtitle="Coverage and support posture at a glance.">
+          <SectionCard eyebrow="Snapshot" title="Coverage snapshot" subtitle="Coverage and support posture at a glance.">
             <div className="space-y-5">
               <ProgressRow label="Students assessed" value={Number(kpis?.assessed_pct ?? 0)} color="#295BA7" />
               <ProgressRow label="Needs support" value={Number(kpis?.needs_support_pct ?? 0)} color="#F3B455" />
@@ -875,7 +975,7 @@ export function OverviewDashboard() {
             </div>
           </SectionCard>
 
-          <SectionCard title="Roster attention" subtitle="A compact operating list for weekly team meetings.">
+          <SectionCard eyebrow="Queue" title="Support queue" subtitle="A compact operating list for weekly student support meetings.">
             <div className="space-y-4">
               <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.95)', backgroundColor: '#FBFDFF' }}>
                 <div className="flex items-center justify-between gap-3">
@@ -922,8 +1022,8 @@ export function OverviewDashboard() {
       </section>
 
       <section className="grid gap-5 lg:grid-cols-2" style={{ marginBottom: SECTION_GAP }}>
-        <SectionCard title="Growth pulse" subtitle="Change over time for students with valid longitudinal data.">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SectionCard eyebrow="Growth" title="Growth and momentum" subtitle="Change over time for students with valid longitudinal data.">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.95)', backgroundColor: '#FBFDFF' }}>
               <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
                 Median growth
@@ -1023,7 +1123,7 @@ export function OverviewDashboard() {
           </div>
         </SectionCard>
 
-        <SectionCard title="Score distribution" subtitle="Latest assessment distribution with benchmark context.">
+        <SectionCard eyebrow="Distribution" title="Performance distribution" subtitle="Latest assessment distribution with benchmark context.">
           {histogramData.length > 0 ? (
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -1080,7 +1180,8 @@ export function OverviewDashboard() {
 
       {distribution?.avg_by_grade && distribution.avg_by_grade.length > 0 && (
         <SectionCard
-          title="Average score by grade"
+          eyebrow="Grade view"
+          title="Performance by grade"
           subtitle="Compares average score and the percentage of students needing support."
           className="overflow-hidden"
         >

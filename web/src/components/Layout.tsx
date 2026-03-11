@@ -3,10 +3,10 @@ import { useTheme } from '../themes/ThemeContext'
 
 const SUBJECTS = ['reading', 'math'] as const
 const PAGES = [
-  { path: 'overview', label: 'Overview', caption: 'Executive view' },
-  { path: 'student', label: 'Students', caption: 'Profiles and supports' },
-  { path: 'grade-entry', label: 'Grade Entry', caption: 'Assessment workflow' },
-  { path: 'analytics', label: 'Analytics', caption: 'Comparative insights' },
+  { path: 'overview', label: 'Overview', caption: 'Dashboard' },
+  { path: 'student', label: 'Students', caption: 'Student profiles' },
+  { path: 'grade-entry', label: 'Assessments', caption: 'Data entry' },
+  { path: 'analytics', label: 'Analytics', caption: 'Cohort trends' },
 ] as const
 
 export function Layout() {
@@ -35,7 +35,7 @@ export function Layout() {
       <aside
         className={`hidden shrink-0 flex-col rounded-[28px] border md:flex ${theme.sidebarPattern ? theme.sidebarPattern : ''}`}
         style={{
-          width: 280,
+          width: 264,
           backgroundColor: theme.palette.sidebarBg ?? 'var(--color-bg-surface)',
           color: 'var(--color-text-primary)',
           borderColor: 'rgba(201, 215, 232, 0.85)',
@@ -58,7 +58,7 @@ export function Layout() {
                 {theme.appTitle}
               </h1>
               <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                PowerSchool-aligned academic operations
+                Academic insights
               </p>
             </div>
           </div>
@@ -76,7 +76,7 @@ export function Layout() {
               Peck Lower + Middle School
             </p>
             <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-              Spring benchmark readiness is live across Reading and Math.
+              Spring benchmark cycle
             </p>
           </div>
         </div>
@@ -108,7 +108,7 @@ export function Layout() {
           </div>
           <div className="px-2">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-muted)' }}>
-              Workspace
+              Navigation
             </p>
           </div>
           <div className="mt-2 space-y-1.5">
@@ -168,23 +168,23 @@ export function Layout() {
             }}
           >
             <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-muted)' }}>
-              Data model
+              Data status
             </p>
             <div className="mt-4 space-y-3 text-sm">
               <div className="flex items-center justify-between gap-3">
-                <span style={{ color: 'var(--color-text-secondary)' }}>Roster sync</span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>Roster</span>
                 <span className="rounded-full px-2 py-1 text-xs font-semibold" style={{ backgroundColor: 'var(--color-status-core-bg)', color: 'var(--color-status-core-text)' }}>
                   Healthy
                 </span>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span style={{ color: 'var(--color-text-secondary)' }}>Interventions</span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>Supports</span>
                 <span className="rounded-full px-2 py-1 text-xs font-semibold" style={{ backgroundColor: 'var(--color-status-strategic-bg)', color: 'var(--color-status-strategic-text)' }}>
                   Monitor
                 </span>
               </div>
               <div className="flex items-center justify-between gap-3">
-                <span style={{ color: 'var(--color-text-secondary)' }}>Benchmark window</span>
+                <span style={{ color: 'var(--color-text-secondary)' }}>Benchmark sync</span>
                 <span className="rounded-full px-2 py-1 text-xs font-semibold" style={{ backgroundColor: 'var(--color-brand-primary-soft)', color: 'var(--color-brand-primary)' }}>
                   Active
                 </span>
@@ -210,7 +210,7 @@ export function Layout() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-muted)' }}>
-                Student intelligence
+                Academic dashboard
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <h2 className="text-[1.5rem] font-semibold capitalize leading-tight" style={{ fontFamily: 'var(--font-family)' }}>
@@ -221,18 +221,15 @@ export function Layout() {
                 </span>
               </div>
               <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                PowerSchool structure with Schoolzilla-style decision support for campus teams.
+                Peck Lower + Middle School · Spring 2025
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full border px-3 py-2 text-sm font-medium" style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)', backgroundColor: 'rgba(255, 255, 255, 0.88)' }}>
-                Campus snapshot
-              </span>
-              <span className="rounded-full border px-3 py-2 text-sm font-medium" style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)', backgroundColor: 'rgba(255, 255, 255, 0.88)' }}>
                 Spring 2025
               </span>
               <span className="rounded-full px-3 py-2 text-sm font-semibold text-white" style={{ background: 'linear-gradient(135deg, var(--color-brand-primary), #5d82d8)' }}>
-                Live data
+                Live sync
               </span>
             </div>
           </div>

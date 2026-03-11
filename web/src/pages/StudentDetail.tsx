@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { type ReactNode, useEffect, useState, useCallback, useMemo } from 'react'
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   api,
@@ -17,6 +17,104 @@ function tierToDisplayTier(tier: string | null): string {
   if (tier === 'Strategic') return 'Strategic (Tier 2)'
   if (tier === 'Intensive') return 'Intensive (Tier 3)'
   return tier || 'Unknown'
+}
+
+function DetailSectionCard({
+  eyebrow = 'Student detail',
+  title,
+  subtitle,
+  actions,
+  children,
+  className = '',
+}: {
+  eyebrow?: string
+  title: string
+  subtitle?: string
+  actions?: ReactNode
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <section
+      className={`rounded-[28px] border bg-white ${className}`}
+      style={{
+        borderColor: 'rgba(201, 215, 232, 0.9)',
+        boxShadow: 'var(--card-shadow)',
+      }}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b px-6 py-5" style={{ borderColor: 'rgba(217, 226, 236, 0.9)' }}>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-muted)' }}>
+            {eyebrow}
+          </p>
+          <h2 className="mt-2 text-[1.2rem] font-semibold leading-tight" style={{ color: 'var(--color-text-primary)' }}>
+            {title}
+          </h2>
+          {subtitle && (
+            <p className="mt-1.5 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+              {subtitle}
+            </p>
+          )}
+        </div>
+        {actions}
+      </div>
+      <div className="p-6">{children}</div>
+    </section>
+  )
+}
+
+function DetailMetricCard({
+  label,
+  value,
+  helper,
+  accent,
+}: {
+  label: string
+  value: ReactNode
+  helper: string
+  accent: string
+}) {
+  return (
+    <div
+      className="min-w-0 rounded-[24px] border p-5"
+      style={{
+        borderColor: `${accent}26`,
+        background: `linear-gradient(180deg, ${accent}10, #ffffff)`,
+      }}
+    >
+      <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+        {label}
+      </p>
+      <div className="mt-3 min-w-0" style={{ color: 'var(--color-text-primary)' }}>
+        {value}
+      </div>
+      <p className="mt-3 text-sm leading-5" style={{ color: 'var(--color-text-muted)' }}>
+        {helper}
+      </p>
+    </div>
+  )
+}
+
+function EmptyStateMessage({
+  title,
+  description,
+}: {
+  title: string
+  description: string
+}) {
+  return (
+    <div
+      className="rounded-[22px] border px-5 py-8 text-center"
+      style={{ borderColor: 'rgba(217, 226, 236, 0.9)', backgroundColor: '#FBFDFF' }}
+    >
+      <p className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+        {title}
+      </p>
+      <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+        {description}
+      </p>
+    </div>
+  )
 }
 
 export function StudentDetail() {
@@ -376,335 +474,569 @@ export function StudentDetail() {
     return [domainMin, domainMax]
   })()
 
+  const studentDisplayName = isUuidMode
+    ? uuidDetail?.display_name ?? uniqueStudents.find((s) => s.studentUuid === studentUuidParam)?.displayName ?? 'Select a student'
+    : student?.student_name ?? 'Select a student'
+
+  const selectedEnrollmentCount =
+    studentEnrollments.length === 0 ? 0 : selectedEnrollmentIds.length === 0 ? studentEnrollments.length : selectedEnrollmentIds.length
+
+  const selectedRecordsLabel = studentEnrollments.length > 0
+    ? `${selectedEnrollmentCount} record${selectedEnrollmentCount === 1 ? '' : 's'} in view`
+    : 'Single record in view'
+
+  const latestScoreValue = displayHeader?.latest_score != null
+    ? Number(displayHeader.latest_score)
+    : filteredScoresHistory.length > 0
+      ? filteredScoresHistory[filteredScoresHistory.length - 1]!.score
+      : scoresHistory.length > 0
+        ? scoresHistory[scoresHistory.length - 1]!.score
+        : null
+
+  const benchmarkStatus =
+    latestScoreValue == null ? 'No benchmark signal' : latestScoreValue >= benchmarkMin ? 'On benchmark' : 'Below benchmark'
+
+  const activeInterventionCount = interventions.filter((i) => (i.status ?? '').toLowerCase().includes('active')).length
+
+  const sortedAssessments = useMemo(
+    () =>
+      [...assessments].sort((a, b) => {
+        const da = (a as Assessment & { assessment_date?: string; effective_date?: string }).assessment_date ??
+          (a as { effective_date?: string }).effective_date ??
+          ''
+        const db = (b as Assessment & { assessment_date?: string; effective_date?: string }).assessment_date ??
+          (b as { effective_date?: string }).effective_date ??
+          ''
+        return db.localeCompare(da)
+      }),
+    [assessments],
+  )
+
+  const sortedInterventions = useMemo(
+    () =>
+      [...interventions].sort((a, b) => {
+        const activeDelta =
+          Number((b.status ?? '').toLowerCase().includes('active')) -
+          Number((a.status ?? '').toLowerCase().includes('active'))
+        if (activeDelta !== 0) return activeDelta
+        return (b.start_date ?? '').localeCompare(a.start_date ?? '')
+      }),
+    [interventions],
+  )
+
+  const latestAssessmentLabel =
+    filteredScoresHistory[filteredScoresHistory.length - 1]?.assessment_type ??
+    scoresHistory[scoresHistory.length - 1]?.assessment_type ??
+    'Assessment history'
+  const scorePointCount = filteredScoresHistory.length > 0 ? filteredScoresHistory.length : scoresHistory.length
+  const latestAssessmentDate =
+    displayHeader?.last_assessed_date ??
+    ((sortedAssessments[0] as Assessment & { assessment_date?: string; effective_date?: string } | undefined)?.assessment_date ??
+      (sortedAssessments[0] as { effective_date?: string } | undefined)?.effective_date ??
+      null)
+
   return (
     <div className="mx-auto" style={{ maxWidth: 'var(--content-max-width)' }}>
-      <h1 className="text-3xl font-bold mb-4" style={{ fontFamily: 'var(--font-family)', color: '#1F2937' }}>
-        {subjectLabel} Student Detail
-      </h1>
-
-      {/* --- Student picker --- */}
-      {isUuidMode || isEnrollmentMode ? (
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">Select student</label>
-          <select
-            className="border rounded px-3 py-2 w-full max-w-xs"
-            value={studentUuidParam ?? ''}
-            onChange={(e) => {
-              const uuid = e.target.value
-              if (uuid) navigate(`/app/${subject}/student/${uuid}`)
-            }}
-          >
-            <option value="">— Select —</option>
-            {uniqueStudents.map((s) => (
-              <option key={s.studentUuid} value={s.studentUuid}>
-                {s.displayName}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : (
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">Select student</label>
-          <select
-            className="border rounded px-3 py-2 w-full max-w-xs"
-            value={selectedId ?? ''}
-            onChange={(e) => setSelectedId(e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">— Select —</option>
-            {uniqueLegacyStudents.map((s) => (
-              <option key={s.student_id} value={s.student_id}>
-                {s.student_name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* --- Enrollment filter (UUID mode) --- */}
-      {isUuidMode && studentEnrollments.length > 0 && (
-        <div className="mb-6 p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium" style={{ color: '#1F2937' }}>Filter by Grade / Year</span>
-            <span className="flex gap-2">
-              <button
-                type="button"
-                className="text-xs underline opacity-70 hover:opacity-100"
-                onClick={selectAll}
+      <section className="grid gap-5 2xl:grid-cols-[1.45fr_0.95fr]" style={{ marginBottom: 'var(--section-gap)' }}>
+        <div
+          className="rounded-[32px] border p-6 md:p-7"
+          style={{
+            borderColor: 'rgba(201, 215, 232, 0.9)',
+            background:
+              'linear-gradient(135deg, rgba(234, 241, 255, 0.95) 0%, rgba(255, 255, 255, 0.98) 48%, rgba(245, 248, 255, 0.96) 100%)',
+            boxShadow: '0 24px 56px rgba(20, 33, 61, 0.08)',
+          }}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-6">
+            <div className="min-w-0 max-w-3xl">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: 'var(--color-brand-primary)' }}>
+                {subjectLabel} student profile
+              </p>
+              <h1
+                className="mt-4 text-[1.9rem] font-semibold leading-tight md:text-[2.35rem]"
+                style={{ fontFamily: 'var(--font-family)', color: 'var(--color-text-primary)' }}
               >
-                Select all
-              </button>
-              <button
-                type="button"
-                className="text-xs underline opacity-70 hover:opacity-100"
-                onClick={deselectToLatestYear}
-              >
-                Latest year only
-              </button>
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            {studentEnrollments.map((e) => {
-              const checked = isEnrollmentSelected(e.enrollment_id)
-              return (
-                <label
-                  key={e.enrollment_id}
-                  className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full border cursor-pointer transition-colors"
-                  style={
-                    checked
-                      ? { backgroundColor: '#1E3A5F', color: '#FFFFFF', borderColor: '#1E3A5F' }
-                      : { backgroundColor: '#E5E7EB', color: '#1E3A5F', borderColor: '#D1D5DB' }
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={checked}
-                    onChange={() => handleToggle(e.enrollment_id)}
-                  />
-                  {e.grade_level} &bull; {e.school_year}
-                </label>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {loading && <p className="text-[var(--color-text)]">Loading...</p>}
-
-      {!loading && hasData && (
-        <>
-          {/* Top strip KPIs — use displayHeader (from API or legacy fallback) */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" style={{ marginBottom: '2.5rem' }}>
-            <div className="p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', borderLeftWidth: '4px', borderLeftColor: '#1E3A5F', boxShadow: 'none' }}>
-              <p className="text-sm opacity-80">Latest Score</p>
-              <p className="text-5xl font-semibold" style={{ color: '#1F2937' }}>
-                {displayHeader?.latest_score != null
-                  ? Number(displayHeader.latest_score).toFixed(1)
-                  : filteredScoresHistory.length > 0
-                    ? filteredScoresHistory[filteredScoresHistory.length - 1].score.toFixed(1)
-                    : scoresHistory.length > 0
-                      ? scoresHistory[scoresHistory.length - 1].score.toFixed(1)
-                      : '—'}
+                {studentDisplayName}
+              </h1>
+              <p className="mt-3 text-sm md:text-base" style={{ color: 'var(--color-text-secondary)' }}>
+                Review growth, benchmark performance, supports, and assessment history in one student-centered view.
               </p>
             </div>
-            <div className="p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
-              <p className="text-sm opacity-80">Tier / Risk</p>
-              <p className="pt-1">
-                <RiskBadge tier={displayHeader ? tierToDisplayTier(displayHeader.tier) : undefined} risk={undefined} />
-              </p>
-            </div>
-            <div className="p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
-              <p className="text-sm opacity-80">Trend</p>
-              <p className="pt-1">
-                <TrendChip trend={displayHeader?.trend ?? undefined} />
-              </p>
-            </div>
-            <div className="p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
-              <p className="text-sm opacity-80">Last assessed</p>
-              <p className="text-lg font-medium" style={{ color: '#1F2937' }}>{displayHeader?.last_assessed_date ?? '—'}</p>
-              {displayHeader?.days_since_assessment != null && (
-                <p className="text-[var(--caption-size)] opacity-70">{displayHeader.days_since_assessment} days since</p>
-              )}
-            </div>
-            <div className="p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
-              <p className="text-sm opacity-80">Intervention</p>
-              <p className="text-lg font-medium" style={{ color: '#1F2937' }}>{displayHeader?.has_active_intervention ? 'Active' : 'None'}</p>
-            </div>
-            <div className="p-4 rounded-lg border" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
-              <p className="text-sm opacity-80">Goal status</p>
-              <p className="text-lg font-medium" style={{ color: '#1F2937' }}>{displayHeader?.goal_status ?? '—'}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: 'var(--color-brand-primary-soft)', color: 'var(--color-brand-primary)' }}>
+                {subjectLabel} program
+              </span>
+              <span className="rounded-full px-3 py-1.5 text-xs font-semibold" style={{ backgroundColor: '#F5F7FB', color: 'var(--color-text-secondary)' }}>
+                {selectedRecordsLabel}
+              </span>
             </div>
           </div>
 
-          {/* Change since last callout */}
-          {changeSinceLast != null && (
+          <div className="mt-8 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
             <div
-              className="mb-6 p-4 rounded-lg border"
-              style={{
-                backgroundColor: changeSinceLast.delta >= 0 ? '#F0F7F3' : '#FDF2F2',
-                border: '1px solid #E2E8F0',
-                borderLeftWidth: '4px',
-                borderLeftColor: changeSinceLast.delta >= 0 ? '#1E6B43' : '#9B1C1C',
-                boxShadow: 'none',
-              }}
+              className="rounded-[28px] border bg-white/88 p-5"
+              style={{ borderColor: 'rgba(201, 215, 232, 0.82)' }}
             >
-              <span className="text-[var(--label-size)] font-medium opacity-80">Change since last: </span>
-              <span
-                className="font-bold"
-                style={{ color: changeSinceLast.delta >= 0 ? '#166534' : '#991B1B' }}
-              >
-                {changeSinceLast.delta >= 0 ? '+' : ''}
-                {changeSinceLast.delta.toFixed(1)} pts
-              </span>
-              <span className="text-[var(--caption-size)] opacity-70 ml-2">
-                ({changeSinceLast.from.toFixed(1)} → {changeSinceLast.to.toFixed(1)})
-              </span>
-            </div>
-          )}
-
-          {/* Score over time with benchmark band */}
-          {scoresHistory.length > 0 && (
-            <div className="mb-8 rounded-lg border p-4" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-lg font-medium" style={{ fontFamily: 'var(--font-family)', color: '#1F2937' }}>Score Over Time</h2>
-                  <div className="flex items-center gap-2 text-xs opacity-70">
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-3 rounded" style={{ backgroundColor: '#A7D4B8' }}></div>
-                      <span>Benchmark range ({benchmarkMin}-{benchmarkMax})</span>
-                    </div>
-                  </div>
-                </div>
-                {availableAssessmentTypes.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs opacity-70">Assessment type:</span>
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+                <label className="flex flex-col gap-2 text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                  Student
+                  {isUuidMode || isEnrollmentMode ? (
                     <select
-                      className="border rounded-lg px-2 py-1 text-xs"
-                      style={{ backgroundColor: '#F7F9FB', borderColor: '#E2E8F0' }}
-                      value={selectedAssessmentType || (availableAssessmentTypes[0] ?? '')}
-                      onChange={(e) => setSelectedAssessmentType(e.target.value)}
+                      className="h-11 rounded-[16px] border px-4"
+                      style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: '#FBFDFF' }}
+                      value={studentUuidParam ?? ''}
+                      onChange={(e) => {
+                        const uuid = e.target.value
+                        if (uuid) navigate(`/app/${subject}/student/${uuid}`)
+                      }}
                     >
-                      {availableAssessmentTypes.map((type) => (
-                        <option key={type} value={type}>
-                          {type}
+                      <option value="">Select a student</option>
+                      {uniqueStudents.map((s) => (
+                        <option key={s.studentUuid} value={s.studentUuid}>
+                          {s.displayName}
                         </option>
                       ))}
                     </select>
+                  ) : (
+                    <select
+                      className="h-11 rounded-[16px] border px-4"
+                      style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: '#FBFDFF' }}
+                      value={selectedId ?? ''}
+                      onChange={(e) => setSelectedId(e.target.value ? Number(e.target.value) : null)}
+                    >
+                      <option value="">Select a student</option>
+                      {uniqueLegacyStudents.map((s) => (
+                        <option key={s.student_id} value={s.student_id}>
+                          {s.student_name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </label>
+                <div className="flex items-end">
+                  <div className="rounded-[16px] border px-4 py-3 text-sm" style={{ borderColor: 'rgba(201, 215, 232, 0.82)', backgroundColor: '#FBFDFF', color: 'var(--color-text-secondary)' }}>
+                    {studentEnrollments.length > 0 ? `${selectedEnrollmentCount} records selected` : latestAssessmentLabel}
                   </div>
-                )}
+                </div>
               </div>
-              <div className="h-64">
+
+              {isUuidMode && studentEnrollments.length > 0 && (
+                <>
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                      Records included
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={selectAll}
+                        className="rounded-full border px-3 py-1.5 text-xs font-semibold"
+                        style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)', backgroundColor: '#FBFDFF' }}
+                      >
+                        All records
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deselectToLatestYear}
+                        className="rounded-full border px-3 py-1.5 text-xs font-semibold"
+                        style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)', backgroundColor: '#FBFDFF' }}
+                      >
+                        Latest year
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {studentEnrollments.map((e) => {
+                      const checked = isEnrollmentSelected(e.enrollment_id)
+
+                      return (
+                        <label
+                          key={e.enrollment_id}
+                          className="inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold"
+                          style={
+                            checked
+                              ? { backgroundColor: 'var(--color-brand-primary-soft)', color: 'var(--color-brand-primary)', borderColor: 'rgba(151, 180, 233, 0.65)' }
+                              : { backgroundColor: '#F7FAFF', color: 'var(--color-text-secondary)', borderColor: 'rgba(201, 215, 232, 0.82)' }
+                          }
+                        >
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={checked}
+                            onChange={() => handleToggle(e.enrollment_id)}
+                          />
+                          {e.grade_level} · {e.school_year}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <DetailMetricCard
+                label="Latest score"
+                value={
+                  <p className="text-[clamp(1.7rem,2.6vw,2.3rem)] font-semibold leading-tight tracking-[-0.02em]">
+                    {latestScoreValue != null ? latestScoreValue.toFixed(1) : 'N/A'}
+                  </p>
+                }
+                helper={latestAssessmentLabel}
+                accent="#295BA7"
+              />
+              <DetailMetricCard
+                label="Tier / risk"
+                value={<RiskBadge tier={displayHeader ? tierToDisplayTier(displayHeader.tier) : undefined} risk={undefined} />}
+                helper={benchmarkStatus}
+                accent="#17663D"
+              />
+              <DetailMetricCard
+                label="Trend"
+                value={<TrendChip trend={displayHeader?.trend ?? undefined} />}
+                helper={changeSinceLast ? `${changeSinceLast.delta >= 0 ? '+' : ''}${changeSinceLast.delta.toFixed(1)} points since last measure` : 'Need at least two assessments for growth'}
+                accent="#B23754"
+              />
+              <DetailMetricCard
+                label="Supports"
+                value={<p className="text-[1.35rem] font-semibold leading-tight">{activeInterventionCount > 0 ? `${activeInterventionCount} active` : 'None active'}</p>}
+                helper={displayHeader?.goal_status ?? (goals.length > 0 ? 'Goals on file' : 'No goals on file')}
+                accent="#F3B455"
+              />
+            </div>
+          </div>
+        </div>
+
+        <DetailSectionCard
+          eyebrow="Snapshot"
+          title="Support snapshot"
+          subtitle="Most recent academic and support context."
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.9)', backgroundColor: '#FBFDFF' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                Last assessed
+              </p>
+              <p className="mt-2 text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                {latestAssessmentDate ?? 'No assessment date'}
+              </p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                {displayHeader?.days_since_assessment != null ? `${displayHeader.days_since_assessment} days since latest assessment` : 'Date not available'}
+              </p>
+            </div>
+            <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.9)', backgroundColor: '#FBFDFF' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                Goal status
+              </p>
+              <p className="mt-2 text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                {displayHeader?.goal_status ?? (goals.length > 0 ? 'Goals on file' : 'No goals')}
+              </p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                {goals.length > 0 ? `${goals.length} goal${goals.length === 1 ? '' : 's'} recorded` : 'No active goal records'}
+              </p>
+            </div>
+            <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.9)', backgroundColor: '#FBFDFF' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                Assessments recorded
+              </p>
+              <p className="mt-2 text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                {sortedAssessments.length}
+              </p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                {scorePointCount} chart point{scorePointCount === 1 ? '' : 's'} in the current view
+              </p>
+            </div>
+            <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.9)', backgroundColor: '#FBFDFF' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                Change since last
+              </p>
+              <p className="mt-2 text-lg font-semibold" style={{ color: changeSinceLast && changeSinceLast.delta < 0 ? '#B23754' : '#17663D' }}>
+                {changeSinceLast ? `${changeSinceLast.delta >= 0 ? '+' : ''}${changeSinceLast.delta.toFixed(1)} pts` : 'N/A'}
+              </p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                {changeSinceLast ? `${changeSinceLast.from.toFixed(1)} to ${changeSinceLast.to.toFixed(1)}` : 'Not enough assessments to compare'}
+              </p>
+            </div>
+          </div>
+        </DetailSectionCard>
+      </section>
+
+      {loading && (
+        <div className="py-14 text-center text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          Loading student profile...
+        </div>
+      )}
+
+      {!loading && !hasData && (
+        <DetailSectionCard
+          eyebrow="Student detail"
+          title="Select a student"
+          subtitle="Choose a student to review progress, supports, and assessment history."
+          className="mb-[var(--section-gap)]"
+        >
+          <EmptyStateMessage
+            title="No student selected yet"
+            description="Use the student picker to open an individual profile. Once selected, charts, assessments, supports, notes, and goals appear here."
+          />
+        </DetailSectionCard>
+      )}
+
+      {!loading && hasData && (
+        <>
+          <DetailSectionCard
+            eyebrow="Progress"
+            title="Progress over time"
+            subtitle="Assessment history across the selected records."
+            actions={
+              availableAssessmentTypes.length > 0 ? (
+                <label className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                  Assessment
+                  <select
+                    className="h-10 rounded-[14px] border px-3"
+                    style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: '#FBFDFF', color: 'var(--color-text-primary)' }}
+                    value={selectedAssessmentType || (availableAssessmentTypes[0] ?? '')}
+                    onChange={(e) => setSelectedAssessmentType(e.target.value)}
+                  >
+                    {availableAssessmentTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : undefined
+            }
+            className="mb-[var(--section-gap)]"
+          >
+            <div className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.9)', backgroundColor: '#FBFDFF' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                  Benchmark band
+                </p>
+                <p className="mt-2 text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                  {benchmarkMin}–{benchmarkMax}
+                </p>
+                <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                  Target range for the selected assessment view
+                </p>
+              </div>
+              <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.9)', backgroundColor: '#FBFDFF' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                  Current assessment
+                </p>
+                <p className="mt-2 text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                  {latestAssessmentLabel}
+                </p>
+                <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                  {scorePointCount} plotted point{scorePointCount === 1 ? '' : 's'}
+                </p>
+              </div>
+              <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.9)', backgroundColor: '#FBFDFF' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                  Intervention status
+                </p>
+                <p className="mt-2 text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                  {activeInterventionCount > 0 ? `${activeInterventionCount} active` : 'No active supports'}
+                </p>
+                <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                  Review supports alongside the chart trend.
+                </p>
+              </div>
+              <div className="rounded-[22px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.9)', backgroundColor: '#FBFDFF' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+                  Momentum
+                </p>
+                <p className="mt-2 text-lg font-semibold" style={{ color: changeSinceLast && changeSinceLast.delta < 0 ? '#B23754' : '#17663D' }}>
+                  {changeSinceLast ? `${changeSinceLast.delta >= 0 ? '+' : ''}${changeSinceLast.delta.toFixed(1)} pts` : 'No comparison'}
+                </p>
+                <p className="mt-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                  {changeSinceLast ? `${changeSinceLast.from.toFixed(1)} → ${changeSinceLast.to.toFixed(1)}` : 'Add another assessment for change over time'}
+                </p>
+              </div>
+            </div>
+
+            {scoresHistory.length > 0 ? (
+              <div className="h-[320px] rounded-[24px] border p-4" style={{ borderColor: 'rgba(217, 226, 236, 0.9)', backgroundColor: '#FBFDFF' }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={filteredScoresHistory} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                    <XAxis dataKey="period" tick={{ fontSize: 12, fill: '#475569' }} />
-                    <YAxis domain={yAxisDomain} tick={{ fontSize: 12, fill: '#475569' }} />
+                  <LineChart data={filteredScoresHistory} margin={{ top: 10, right: 16, left: 8, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                    <XAxis dataKey="period" tick={{ fontSize: 12, fill: '#62748D' }} axisLine={false} tickLine={false} />
+                    <YAxis domain={yAxisDomain} tick={{ fontSize: 12, fill: '#62748D' }} axisLine={false} tickLine={false} />
                     <Tooltip
+                      contentStyle={{ borderRadius: 16, borderColor: '#D9E2EC', boxShadow: '0 16px 32px rgba(20, 33, 61, 0.12)' }}
                       formatter={(value: number | string | undefined, _name?: string, props?: { payload?: { assessment_type?: string } }) => {
                         const type = props?.payload?.assessment_type
                         const formatted = typeof value === 'number' ? Number(value).toFixed(1) : value ?? 'N/A'
                         return type ? [`${formatted} (${type})`, 'Score'] : [formatted, 'Score']
                       }}
                     />
-                    <ReferenceArea y1={benchmarkMin} y2={benchmarkMax} fill="#EAF4EF" fillOpacity={0.9} />
-                    <Line type="monotone" dataKey="score" stroke="#1E3A5F" strokeWidth={2.5} name="Score" dot={{ r: 4 }} />
+                    <ReferenceArea y1={benchmarkMin} y2={benchmarkMax} fill="#EAF4EF" fillOpacity={0.95} />
+                    <Line type="monotone" dataKey="score" stroke="#295BA7" strokeWidth={3} name="Score" dot={{ r: 4, strokeWidth: 2, fill: '#FFFFFF' }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-            </div>
-          )}
+            ) : (
+              <EmptyStateMessage
+                title="No assessment chart yet"
+                description="Once assessments are available for this student, the progress trend appears here."
+              />
+            )}
+          </DetailSectionCard>
 
-          {/* Assessments, Interventions, Notes, Goals */}
-          <div className="grid md:grid-cols-2 gap-6 mb-6">
-            <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
-              <h2 className="text-lg font-medium p-4 border-b" style={{ fontFamily: 'var(--font-family)', borderColor: '#E2E8F0', color: '#1F2937' }}>Assessments</h2>
-              <div className="overflow-x-auto max-h-64 overflow-y-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b" style={{ borderColor: 'var(--color-border)' }}>
-                      <th className="text-left p-3">Type</th>
-                      <th className="text-left p-3">Period</th>
-                      <th className="text-left p-3">Score</th>
-                      <th className="text-left p-3">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {assessments.map((a, idx) => (
-                      <tr
-                        key={(a as Assessment & { assessment_id?: number }).assessment_id ?? `${a.assessment_type}-${a.assessment_period}-${idx}`}
-                        className="border-b"
-                        style={{ borderColor: 'var(--color-border)' }}
-                      >
-                        <td className="p-3">{a.assessment_type}</td>
-                        <td className="p-3">{a.assessment_period}</td>
-                        <td className="p-3">
-                          {(a as Assessment & { score_normalized?: number }).score_value ??
-                            ((a as Assessment & { score_normalized?: number }).score_normalized != null
-                              ? Number((a as Assessment & { score_normalized?: number }).score_normalized).toFixed(1)
-                              : '—')}
-                        </td>
-                        <td className="p-3">{(a as Assessment & { assessment_date?: string; effective_date?: string }).assessment_date ?? (a as { effective_date?: string }).effective_date ?? '—'}</td>
+          <section className="grid gap-5 xl:grid-cols-2" style={{ marginBottom: 'var(--section-gap)' }}>
+            <DetailSectionCard
+              eyebrow="Records"
+              title="Assessments"
+              subtitle={`${sortedAssessments.length} assessment${sortedAssessments.length === 1 ? '' : 's'} recorded`}
+            >
+              {sortedAssessments.length > 0 ? (
+                <div className="overflow-x-auto rounded-[22px] border" style={{ borderColor: 'rgba(217, 226, 236, 0.9)' }}>
+                  <table className="w-full text-sm">
+                    <thead style={{ backgroundColor: 'var(--table-header-bg)' }}>
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Type</th>
+                        <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Period</th>
+                        <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Score</th>
+                        <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Date</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
-              <h2 className="text-lg font-medium p-4 border-b" style={{ fontFamily: 'var(--font-family)', borderColor: '#E2E8F0', color: '#1F2937' }}>Interventions</h2>
-              <div className="overflow-x-auto max-h-64 overflow-y-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b" style={{ borderColor: 'var(--color-border)' }}>
-                      <th className="text-left p-3">Type</th>
-                      <th className="text-left p-3">Start</th>
-                      <th className="text-left p-3">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {interventions.map((i, idx) => (
-                      <tr
-                        key={(i as Intervention & { intervention_id?: number }).intervention_id ?? `${i.start_date}-${idx}`}
-                        className="border-b"
-                        style={{ borderColor: 'var(--color-border)' }}
-                      >
-                        <td className="p-3">{i.intervention_type}</td>
-                        <td className="p-3">{i.start_date}</td>
-                        <td className="p-3">{i.status ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+                    </thead>
+                    <tbody>
+                      {sortedAssessments.map((a, idx) => (
+                        <tr
+                          key={(a as Assessment & { assessment_id?: number }).assessment_id ?? `${a.assessment_type}-${a.assessment_period}-${idx}`}
+                          style={{ borderTop: '1px solid rgba(217, 226, 236, 0.9)' }}
+                        >
+                          <td className="px-4 py-3">{a.assessment_type}</td>
+                          <td className="px-4 py-3">{a.assessment_period}</td>
+                          <td className="px-4 py-3">
+                            {(a as Assessment & { score_normalized?: number }).score_value ??
+                              ((a as Assessment & { score_normalized?: number }).score_normalized != null
+                                ? Number((a as Assessment & { score_normalized?: number }).score_normalized).toFixed(1)
+                                : 'N/A')}
+                          </td>
+                          <td className="px-4 py-3">
+                            {(a as Assessment & { assessment_date?: string; effective_date?: string }).assessment_date ??
+                              (a as { effective_date?: string }).effective_date ??
+                              'N/A'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <EmptyStateMessage
+                  title="No assessments recorded"
+                  description="Add an assessment to start building the student’s performance history."
+                />
+              )}
+            </DetailSectionCard>
 
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
-              <h2 className="text-lg font-medium p-4 border-b" style={{ fontFamily: 'var(--font-family)', borderColor: '#E2E8F0', color: '#1F2937' }}>Notes</h2>
-              <div className="overflow-x-auto max-h-48 overflow-y-auto p-4">
-                {notes.length === 0 ? (
-                  <p className="text-[var(--caption-size)] opacity-70">No notes yet.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {notes.map((n, idx) => (
-                      <li key={idx} className="text-sm border-b pb-2" style={{ borderColor: 'var(--color-border)' }}>
+            <DetailSectionCard
+              eyebrow="Supports"
+              title="Interventions"
+              subtitle={`${sortedInterventions.length} intervention${sortedInterventions.length === 1 ? '' : 's'} recorded`}
+            >
+              {sortedInterventions.length > 0 ? (
+                <div className="overflow-x-auto rounded-[22px] border" style={{ borderColor: 'rgba(217, 226, 236, 0.9)' }}>
+                  <table className="w-full text-sm">
+                    <thead style={{ backgroundColor: 'var(--table-header-bg)' }}>
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Type</th>
+                        <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Start</th>
+                        <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedInterventions.map((i, idx) => (
+                        <tr
+                          key={(i as Intervention & { intervention_id?: number }).intervention_id ?? `${i.start_date}-${idx}`}
+                          style={{ borderTop: '1px solid rgba(217, 226, 236, 0.9)' }}
+                        >
+                          <td className="px-4 py-3">{i.intervention_type}</td>
+                          <td className="px-4 py-3">{i.start_date}</td>
+                          <td className="px-4 py-3">{i.status ?? 'N/A'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <EmptyStateMessage
+                  title="No interventions recorded"
+                  description="Intervention plans and support services appear here when they are added for this student."
+                />
+              )}
+            </DetailSectionCard>
+          </section>
+
+          <section className="grid gap-5 xl:grid-cols-2">
+            <DetailSectionCard
+              eyebrow="Collaboration"
+              title="Notes"
+              subtitle={notes.length > 0 ? `${notes.length} note${notes.length === 1 ? '' : 's'} recorded` : 'No notes on file'}
+            >
+              {notes.length > 0 ? (
+                <div className="space-y-3">
+                  {notes.map((n, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-[20px] border px-4 py-3"
+                      style={{ borderColor: 'rgba(217, 226, 236, 0.9)', backgroundColor: '#FBFDFF' }}
+                    >
+                      <p className="text-sm" style={{ color: 'var(--color-text-primary)' }}>
                         {(n as { note_text?: string }).note_text ?? JSON.stringify(n)}
-                        {(n as { note_date?: string }).note_date && (
-                          <span className="block text-[var(--caption-size)] opacity-70 mt-1">
-                            {(n as { note_date: string }).note_date}
-                          </span>
+                      </p>
+                      {(n as { note_date?: string }).note_date && (
+                        <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                          {(n as { note_date: string }).note_date}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyStateMessage
+                  title="No notes yet"
+                  description="Teacher or intervention notes can live here for a fuller student narrative."
+                />
+              )}
+            </DetailSectionCard>
+
+            <DetailSectionCard
+              eyebrow="Goals"
+              title="Student goals"
+              subtitle={goals.length > 0 ? `${goals.length} goal${goals.length === 1 ? '' : 's'} on file` : 'No goals on file'}
+            >
+              {goals.length > 0 ? (
+                <div className="space-y-3">
+                  {goals.map((g, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-[20px] border px-4 py-3"
+                      style={{ borderColor: 'rgba(217, 226, 236, 0.9)', backgroundColor: '#FBFDFF' }}
+                    >
+                      <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                        {(g as { measure?: string }).measure ?? 'Goal'}
+                      </p>
+                      {(g as { baseline_score?: number }).baseline_score != null &&
+                        (g as { target_score?: number }).target_score != null && (
+                          <p className="mt-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                            {Number((g as { baseline_score: number }).baseline_score).toFixed(1)} →{' '}
+                            {Number((g as { target_score: number }).target_score).toFixed(1)}
+                          </p>
                         )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-            <div className="rounded-lg border overflow-hidden" style={{ backgroundColor: '#F7F9FB', border: '1px solid #E2E8F0', boxShadow: 'none' }}>
-              <h2 className="text-lg font-medium p-4 border-b" style={{ fontFamily: 'var(--font-family)', borderColor: '#E2E8F0', color: '#1F2937' }}>Goals</h2>
-              <div className="overflow-x-auto max-h-48 overflow-y-auto p-4">
-                {goals.length === 0 ? (
-                  <p className="text-[var(--caption-size)] opacity-70">No goals set.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {goals.map((g, idx) => (
-                      <li key={idx} className="text-sm border-b pb-2" style={{ borderColor: 'var(--color-border)' }}>
-                        <span className="font-medium">{(g as { measure?: string }).measure ?? 'Goal'}</span>
-                        {(g as { baseline_score?: number }).baseline_score != null &&
-                          (g as { target_score?: number }).target_score != null && (
-                            <span className="ml-2 opacity-80">
-                              {Number((g as { baseline_score: number }).baseline_score).toFixed(1)} →{' '}
-                              {Number((g as { target_score: number }).target_score).toFixed(1)}
-                            </span>
-                          )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyStateMessage
+                  title="No goals set"
+                  description="Progress goals and target measures can be tracked here once they are created."
+                />
+              )}
+            </DetailSectionCard>
+          </section>
         </>
       )}
     </div>
