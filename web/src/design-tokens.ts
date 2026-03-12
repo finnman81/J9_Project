@@ -70,16 +70,16 @@ export const space = {
 // Radii + Shadows
 // -----------------------------------------------------------------------------
 export const radius = {
-  sm: '6px',
-  md: '10px',
-  lg: '14px',
-  xl: '18px',
+  sm: '8px',
+  md: '12px',
+  lg: '18px',
+  xl: '24px',
 } as const
 
 export const shadow = {
-  sm: '0 1px 2px rgba(16, 24, 40, 0.06)',
-  md: '0 2px 8px rgba(16, 24, 40, 0.10)',
-  focus: '0 0 0 3px rgba(59, 130, 246, 0.25)',
+  sm: '0 10px 30px rgba(24, 39, 75, 0.06)',
+  md: '0 18px 48px rgba(24, 39, 75, 0.10)',
+  focus: '0 0 0 3px rgba(72, 118, 255, 0.18)',
 } as const
 
 // -----------------------------------------------------------------------------
@@ -93,9 +93,9 @@ export const border = {
 } as const
 
 export const layout = {
-  containerMax: '1280px',
+  containerMax: '1400px',
   gutter: '24px',
-  sectionGap: '32px',
+  sectionGap: '28px',
 } as const
 
 // -----------------------------------------------------------------------------
@@ -103,38 +103,38 @@ export const layout = {
 // -----------------------------------------------------------------------------
 export const color = {
   bg: {
-    app: '#F7F8FA',
+    app: '#F4F7FB',
     surface: '#FFFFFF',
-    surfaceMuted: '#F3F5F7',
+    surfaceMuted: '#EEF3F9',
   },
   text: {
-    primary: '#101828',
-    secondary: '#344054',
-    muted: '#667085',
+    primary: '#14213D',
+    secondary: '#31415F',
+    muted: '#62748D',
     disabled: '#98A2B3',
     inverse: '#FFFFFF',
   },
   border: {
-    subtle: '#EAECF0',
-    default: '#D0D5DD',
-    strong: '#98A2B3',
+    subtle: '#D9E2EC',
+    default: '#C7D3E0',
+    strong: '#91A3BC',
   },
   brand: {
-    primary: '#1F4E79',
-    primaryHover: '#173B5C',
-    primarySoft: '#E8F0F8',
+    primary: '#295BA7',
+    primaryHover: '#204A89',
+    primarySoft: '#EAF1FF',
   },
   focus: {
-    ring: '#3B82F6',
+    ring: '#4876FF',
   },
   status: {
-    core: { bg: '#E7F6EC', text: '#027A48', border: '#B7E4C7' },
-    strategic: { bg: '#FEF3C7', text: '#92400E', border: '#FCD34D' },
-    intensive: { bg: '#FEE2E2', text: '#B42318', border: '#FCA5A5' },
-    stable: { bg: '#F2F4F7', text: '#344054', border: '#D0D5DD' },
-    improving: { bg: '#E7F6EC', text: '#027A48', border: '#B7E4C7' },
-    declining: { bg: '#FEE2E2', text: '#B42318', border: '#FCA5A5' },
-    unknown: { bg: '#F2F4F7', text: '#667085', border: '#D0D5DD' },
+    core: { bg: '#E8F7EE', text: '#17663D', border: '#C8E8D4' },
+    strategic: { bg: '#FFF3E4', text: '#A8570C', border: '#FFD6AE' },
+    intensive: { bg: '#FFE8EC', text: '#B23754', border: '#F7C5D1' },
+    stable: { bg: '#EEF3F9', text: '#415A77', border: '#D3DDE9' },
+    improving: { bg: '#E7F4EC', text: '#17663D', border: '#BFE1CB' },
+    declining: { bg: '#FFF0F2', text: '#B23754', border: '#F6CAD3' },
+    unknown: { bg: '#F5F7FB', text: '#62748D', border: '#D9E2EC' },
   },
 } as const
 
@@ -143,40 +143,40 @@ export const color = {
 // -----------------------------------------------------------------------------
 export const button = {
   height: { sm: '32px', md: '40px', lg: '44px' },
-  radius: '10px',
+  radius: '12px',
   paddingX: { sm: '10px', md: '14px', lg: '16px' },
   font: { size: '14px', weight: 600 },
 } as const
 
 export const input = {
   height: { md: '40px', lg: '44px' },
-  radius: '10px',
+  radius: '12px',
   paddingX: '12px',
   font: { size: '14px', weight: 500 },
   placeholder: '#98A2B3',
 } as const
 
 export const card = {
-  radius: '14px',
-  padding: '20px',
-  border: '#EAECF0',
-  shadow: '0 1px 2px rgba(16, 24, 40, 0.06)',
+  radius: '18px',
+  padding: '22px',
+  border: '#D9E2EC',
+  shadow: '0 12px 34px rgba(24, 39, 75, 0.08)',
 } as const
 
 export const kpiCard = {
   padding: '22px',
-  valueSize: '34px',
+  valueSize: '32px',
   labelSize: '13px',
 } as const
 
 export const table = {
-  headerBg: '#F3F5F7',
-  rowHoverBg: '#F7F8FA',
-  border: '#EAECF0',
-  radius: '14px',
+  headerBg: '#F4F7FB',
+  rowHoverBg: '#F8FBFF',
+  border: '#D9E2EC',
+  radius: '18px',
   fontSize: '15px',
   rowHeight: {
-    comfortable: '52px',
+    comfortable: '56px',
     compact: '44px',
   },
 } as const

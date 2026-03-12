@@ -3,7 +3,6 @@ import { createContext, useContext, useMemo, type ReactNode } from 'react'
 import { tokensToCssVars } from '../design-tokens'
 import { getTheme } from './index'
 import type { Theme } from './types'
-import './peck.css'
 
 const themeName = import.meta.env.VITE_THEME || 'peck'
 const theme = getTheme(themeName)

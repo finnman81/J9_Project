@@ -52,6 +52,10 @@
   --chip-padding: 6px 12px;
 }
 
+* {
+  box-sizing: border-box;
+}
+
 html {
   font-size: 16px;
 }
@@ -64,11 +68,49 @@ body {
   font-weight: var(--font-weight-medium);
   line-height: var(--font-line-height-normal);
   background-color: var(--color-bg-app);
+  background-image:
+    radial-gradient(circle at top left, rgba(93, 130, 216, 0.12), transparent 26%),
+    radial-gradient(circle at top right, rgba(243, 180, 85, 0.10), transparent 18%),
+    linear-gradient(180deg, #f8fbff 0%, var(--color-bg-app) 18%, var(--color-bg-app) 100%);
   color: var(--color-text-primary);
 }
 
 #root {
   min-height: 100vh;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button,
+input,
+select,
+a {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+::selection {
+  background: rgba(93, 130, 216, 0.22);
 }
 
 /* Table row hover from design token */
