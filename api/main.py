@@ -28,9 +28,10 @@ from api.routers import students, assessments, interventions, dashboard, teacher
 logger = logging.getLogger(__name__)
 
 # CORS: allowlist from env (comma-separated); default dev origins
-_cors_raw = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").strip()
+_cors_raw = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://localhost:5174,http://localhost:3000").strip()
 CORS_ORIGINS = [o.strip() for o in _cors_raw.split(",") if o.strip()] if _cors_raw else ["http://localhost:5173"]
 ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS
+_CORS_ORIGIN_REGEX = r"^http://localhost:\d+$" if not os.environ.get("CORS_ORIGINS") else None
 
 app = FastAPI(
     title="School Assessment System API",
@@ -68,6 +69,7 @@ def unhandled_exception_handler(request: Request, exc: Exception) -> JSONRespons
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
+    allow_origin_regex=_CORS_ORIGIN_REGEX,
     allow_credentials=ALLOW_CREDENTIALS,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
